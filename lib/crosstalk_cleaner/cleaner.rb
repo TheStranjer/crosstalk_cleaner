@@ -18,7 +18,7 @@ module CrosstalkCleaner
       @logger = logger
       @detector = SilenceDetector.new(ffmpeg)
       @resolver = OverlapResolver.new(tolerance_s: config.crosstalk_tolerance_s)
-      @mixer = AudioMixer.new(ffmpeg)
+      @mixer = AudioMixer.new(ffmpeg, buffer_s: config.block_buffer_s)
       @remover = SilenceRemover.new(ffmpeg)
     end
 

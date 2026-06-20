@@ -75,8 +75,9 @@ required.
 | `OUTPUT`              | `output.wav` in the first input's folder  | Path of the final WAV file. |
 | `SILENCE_LIMIT`       | `750`                                      | Maximum amount of silence to keep, in **milliseconds**. Longer silences are cut down to this. |
 | `CROSSTALK_TOLERANCE` | `300`                                      | How close two speakers' start times (in **milliseconds**) must be to count as simultaneous, in which case priority breaks the tie. |
+| `BLOCK_BUFFER`        | `100`                                      | Padding, in **milliseconds**, kept on each side of every owned block so a speaker fades in/out instead of cutting in abruptly. |
 
-`SILENCE_LIMIT` and `CROSSTALK_TOLERANCE` must be positive integers.
+`SILENCE_LIMIT`, `CROSSTALK_TOLERANCE` and `BLOCK_BUFFER` must be positive integers.
 
 ### Examples
 

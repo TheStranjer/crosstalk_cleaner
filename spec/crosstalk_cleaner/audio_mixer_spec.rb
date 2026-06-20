@@ -14,6 +14,20 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       expr = mixer.mute_expression([interval(1.0, 2.0, 0), interval(4.0, 5.5, 0)])
       expect(expr).to eq("not(between(t,1.000,2.000)+between(t,4.000,5.500))")
     end
+
+    context "with a block buffer" do
+      subject(:mixer) { described_class.new(ffmpeg, buffer_s: 0.1) }
+
+      it "pads each owned block by the buffer on both sides" do
+        expr = mixer.mute_expression([interval(1.0, 2.0, 0)])
+        expect(expr).to eq("not(between(t,0.900,2.100))")
+      end
+
+      it "clamps the padded start at zero so it never goes negative" do
+        expr = mixer.mute_expression([interval(0.05, 2.0, 0)])
+        expect(expr).to eq("not(between(t,0.000,2.100))")
+      end
+    end
   end
 
   describe "#filter_complex" do

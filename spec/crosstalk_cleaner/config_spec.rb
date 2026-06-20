@@ -43,6 +43,14 @@ RSpec.describe CrosstalkCleaner::Config do
       expect(config.crosstalk_tolerance_ms).to eq(300)
     end
 
+    it "defaults the block buffer to 100ms" do
+      expect(config.block_buffer_ms).to eq(100)
+    end
+
+    it "exposes the block buffer in seconds" do
+      expect(config.block_buffer_s).to eq(0.1)
+    end
+
     it "defaults output to output.wav beside the first input" do
       expect(config.output).to eq(File.join(dir, "output.wav"))
     end
@@ -71,6 +79,10 @@ RSpec.describe CrosstalkCleaner::Config do
 
     it "honours CROSSTALK_TOLERANCE" do
       expect(build(env: { "CROSSTALK_TOLERANCE" => "500" }).crosstalk_tolerance_ms).to eq(500)
+    end
+
+    it "honours BLOCK_BUFFER" do
+      expect(build(env: { "BLOCK_BUFFER" => "250" }).block_buffer_ms).to eq(250)
     end
 
     it "falls back to the default for an empty numeric value" do

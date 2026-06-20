@@ -8,8 +8,9 @@ module CrosstalkCleaner
   class Config
     DEFAULT_SILENCE_LIMIT_MS = 750
     DEFAULT_CROSSTALK_TOLERANCE_MS = 300
+    DEFAULT_BLOCK_BUFFER_MS = 100
 
-    attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms
+    attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms
 
     # @param argv [Array<String>] input wav files in priority order (first = top)
     # @param env [Hash] environment variables (defaults to ENV)
@@ -20,6 +21,7 @@ module CrosstalkCleaner
       @silence_limit_ms = positive_int(env["SILENCE_LIMIT"], DEFAULT_SILENCE_LIMIT_MS, "SILENCE_LIMIT")
       @crosstalk_tolerance_ms = positive_int(env["CROSSTALK_TOLERANCE"], DEFAULT_CROSSTALK_TOLERANCE_MS,
                                              "CROSSTALK_TOLERANCE")
+      @block_buffer_ms = positive_int(env["BLOCK_BUFFER"], DEFAULT_BLOCK_BUFFER_MS, "BLOCK_BUFFER")
       @output = resolve_output(env["OUTPUT"])
     end
 
@@ -31,6 +33,11 @@ module CrosstalkCleaner
     # Silence limit expressed in seconds.
     def silence_limit_s
       silence_limit_ms / 1000.0
+    end
+
+    # Block buffer (padding around each owned block) expressed in seconds.
+    def block_buffer_s
+      block_buffer_ms / 1000.0
     end
 
     private

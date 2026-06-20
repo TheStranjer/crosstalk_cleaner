@@ -8,8 +8,12 @@ module CrosstalkCleaner
   # intervals it owns (per OverlapResolver), then all tracks are summed. Because
   # ownership intervals never overlap, the sum is the single active speaker.
   class AudioMixer
-    def initialize(ffmpeg)
+    # @param ffmpeg [Ffmpeg] the ffmpeg shell-out wrapper
+    # @param buffer_s [Float] padding, in seconds, added to each side of every
+    #   owned block so a speaker fades in/out instead of cutting in abruptly.
+    def initialize(ffmpeg, buffer_s: 0.0)
       @ffmpeg = ffmpeg
+      @buffer_s = buffer_s
     end
 
     # @param inputs [Array<String>] input file paths, in priority order
@@ -54,7 +58,9 @@ module CrosstalkCleaner
       return "1" if intervals.empty?
 
       owned = intervals.map do |interval|
-        format("between(t,%<start>.3f,%<end>.3f)", start: interval.start_at, end: interval.end_at)
+        start_at = [interval.start_at - @buffer_s, 0.0].max
+        end_at = interval.end_at + @buffer_s
+        format("between(t,%<start>.3f,%<end>.3f)", start: start_at, end: end_at)
       end.join("+")
       "not(#{owned})"
     end

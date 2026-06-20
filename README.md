@@ -70,14 +70,22 @@ required.
 
 ## Configuration (environment variables)
 
-| Variable              | Default                                   | Meaning |
-| --------------------- | ----------------------------------------- | ------- |
-| `OUTPUT`              | `output.wav` in the first input's folder  | Path of the final WAV file. |
-| `SILENCE_LIMIT`       | `750`                                      | Maximum amount of silence to keep, in **milliseconds**. Longer silences are cut down to this. |
-| `CROSSTALK_TOLERANCE` | `300`                                      | How close two speakers' start times (in **milliseconds**) must be to count as simultaneous, in which case priority breaks the tie. |
-| `BLOCK_BUFFER`        | `100`                                      | Padding, in **milliseconds**, kept on each side of every owned block so a speaker fades in/out instead of cutting in abruptly. |
+| Variable                     | Default                                   | Meaning |
+| ---------------------------- | ----------------------------------------- | ------- |
+| `OUTPUT`                     | `output.wav` in the first input's folder  | Path of the final WAV file. |
+| `SILENCE_LIMIT`              | `750`                                      | Maximum amount of silence to keep, in **milliseconds**. Longer silences are cut down to this. |
+| `CROSSTALK_TOLERANCE`        | `300`                                      | How close two speakers' start times (in **milliseconds**) must be to count as simultaneous, in which case priority breaks the tie. |
+| `BLOCK_BUFFER`               | `100`                                      | Padding, in **milliseconds**, kept on each side of every owned block so a speaker fades in/out instead of cutting in abruptly. |
+| `SILENCEDETECT_NOISE`        | `-30dB`                                    | Amplitude below which audio counts as silence when **detecting** speech regions. Any `ffmpeg` volume expression (e.g. `-40dB`, `0.01`). |
+| `SILENCEDETECT_MIN_DURATION` | `0.1`                                      | Minimum length, in **seconds**, a quiet stretch must last to be treated as silence during detection. |
+| `NOISE_FLOOR`                | `-30dB`                                    | Amplitude below which audio counts as silence when **trimming** dead silence from the final mix. Any `ffmpeg` volume expression. |
+| `RESAMPLE_RATE`              | `48000`                                    | Sample rate, in **Hz**, every track is resampled to before mixing. |
+| `CHANNEL_LAYOUT`             | `stereo`                                   | Channel layout every track is conformed to before mixing (e.g. `stereo`, `mono`). |
+| `FFMPEG_BIN`                 | `ffmpeg`                                   | Path to (or name of) the `ffmpeg` binary to invoke. |
+| `FFPROBE_BIN`                | `ffprobe`                                  | Path to (or name of) the `ffprobe` binary to invoke. |
 
-`SILENCE_LIMIT`, `CROSSTALK_TOLERANCE` and `BLOCK_BUFFER` must be positive integers.
+`SILENCE_LIMIT`, `CROSSTALK_TOLERANCE`, `BLOCK_BUFFER` and `RESAMPLE_RATE` must be positive integers;
+`SILENCEDETECT_MIN_DURATION` must be a positive number.
 
 ### Examples
 
@@ -87,6 +95,10 @@ OUTPUT=~/episode42.wav ruby ./crosstalk_cleaner.rb host.wav guest.wav
 
 # Keep at most 1.5s of silence, widen the crosstalk tie window to 500ms
 SILENCE_LIMIT=1500 CROSSTALK_TOLERANCE=500 ruby ./crosstalk_cleaner.rb a.wav b.wav c.wav
+
+# Treat quieter audio as silence and downmix to mono at 44.1kHz
+SILENCEDETECT_NOISE=-45dB NOISE_FLOOR=-45dB RESAMPLE_RATE=44100 CHANNEL_LAYOUT=mono \
+  ruby ./crosstalk_cleaner.rb a.wav b.wav
 ```
 
 ## How it works internally

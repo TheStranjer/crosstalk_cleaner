@@ -9,9 +9,13 @@ module CrosstalkCleaner
     SILENCEDETECT_NOISE = "-30dB"
     SILENCEDETECT_MIN_DURATION = 0.1
 
-    def initialize(ffmpeg_bin: "ffmpeg", ffprobe_bin: "ffprobe")
+    def initialize(ffmpeg_bin: "ffmpeg", ffprobe_bin: "ffprobe",
+                   silencedetect_noise: SILENCEDETECT_NOISE,
+                   silencedetect_min_duration: SILENCEDETECT_MIN_DURATION)
       @ffmpeg_bin = ffmpeg_bin
       @ffprobe_bin = ffprobe_bin
+      @silencedetect_noise = silencedetect_noise
+      @silencedetect_min_duration = silencedetect_min_duration
     end
 
     # Returns the duration of +path+ in seconds.
@@ -27,7 +31,7 @@ module CrosstalkCleaner
     end
 
     # Runs silencedetect over +path+ and returns ffmpeg's stderr text for parsing.
-    def silencedetect(path, noise: SILENCEDETECT_NOISE, min_duration: SILENCEDETECT_MIN_DURATION)
+    def silencedetect(path, noise: @silencedetect_noise, min_duration: @silencedetect_min_duration)
       filter = "silencedetect=noise=#{noise}:d=#{min_duration}"
       args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path, "-af", filter, "-f", "null", "-"]
       _stdout, stderr, status = Open3.capture3(*args)

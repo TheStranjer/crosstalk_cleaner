@@ -41,6 +41,16 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
         "[a0][a1]amix=inputs=2:normalize=0[mix]"
       )
     end
+
+    it "honours a custom resample rate and channel layout" do
+      mixer = described_class.new(ffmpeg, resample_rate: 44_100, channel_layout: "mono")
+      ownership = { 0 => [interval(0.0, 5.0, 0)] }
+      expect(mixer.filter_complex(1, ownership)).to eq(
+        "[0:a]aresample=44100,aformat=channel_layouts=mono," \
+        "volume=0:enable='not(between(t,0.000,5.000))'[a0];" \
+        "[a0]amix=inputs=1:normalize=0[mix]"
+      )
+    end
   end
 
   describe "#build_args" do

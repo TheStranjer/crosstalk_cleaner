@@ -62,6 +62,34 @@ RSpec.describe CrosstalkCleaner::Config do
     it "exposes the silence limit in seconds" do
       expect(config.silence_limit_s).to eq(0.75)
     end
+
+    it "defaults the silencedetect noise to -30dB" do
+      expect(config.silencedetect_noise).to eq("-30dB")
+    end
+
+    it "defaults the silencedetect min duration to 0.1s" do
+      expect(config.silencedetect_min_duration).to eq(0.1)
+    end
+
+    it "defaults the noise floor to -30dB" do
+      expect(config.noise_floor).to eq("-30dB")
+    end
+
+    it "defaults the resample rate to 48000Hz" do
+      expect(config.resample_rate).to eq(48_000)
+    end
+
+    it "defaults the channel layout to stereo" do
+      expect(config.channel_layout).to eq("stereo")
+    end
+
+    it "defaults the ffmpeg binary to ffmpeg" do
+      expect(config.ffmpeg_bin).to eq("ffmpeg")
+    end
+
+    it "defaults the ffprobe binary to ffprobe" do
+      expect(config.ffprobe_bin).to eq("ffprobe")
+    end
   end
 
   describe "environment overrides" do
@@ -85,6 +113,38 @@ RSpec.describe CrosstalkCleaner::Config do
       expect(build(env: { "BLOCK_BUFFER" => "250" }).block_buffer_ms).to eq(250)
     end
 
+    it "honours SILENCEDETECT_NOISE" do
+      expect(build(env: { "SILENCEDETECT_NOISE" => "-40dB" }).silencedetect_noise).to eq("-40dB")
+    end
+
+    it "honours SILENCEDETECT_MIN_DURATION" do
+      expect(build(env: { "SILENCEDETECT_MIN_DURATION" => "0.25" }).silencedetect_min_duration).to eq(0.25)
+    end
+
+    it "honours NOISE_FLOOR" do
+      expect(build(env: { "NOISE_FLOOR" => "-50dB" }).noise_floor).to eq("-50dB")
+    end
+
+    it "honours RESAMPLE_RATE" do
+      expect(build(env: { "RESAMPLE_RATE" => "44100" }).resample_rate).to eq(44_100)
+    end
+
+    it "honours CHANNEL_LAYOUT" do
+      expect(build(env: { "CHANNEL_LAYOUT" => "mono" }).channel_layout).to eq("mono")
+    end
+
+    it "honours FFMPEG_BIN" do
+      expect(build(env: { "FFMPEG_BIN" => "/opt/ffmpeg" }).ffmpeg_bin).to eq("/opt/ffmpeg")
+    end
+
+    it "honours FFPROBE_BIN" do
+      expect(build(env: { "FFPROBE_BIN" => "/opt/ffprobe" }).ffprobe_bin).to eq("/opt/ffprobe")
+    end
+
+    it "falls back to the default for an empty string value" do
+      expect(build(env: { "SILENCEDETECT_NOISE" => "" }).silencedetect_noise).to eq("-30dB")
+    end
+
     it "falls back to the default for an empty numeric value" do
       expect(build(env: { "SILENCE_LIMIT" => "" }).silence_limit_ms).to eq(750)
     end
@@ -97,6 +157,16 @@ RSpec.describe CrosstalkCleaner::Config do
     it "rejects a zero or negative value" do
       expect { build(env: { "CROSSTALK_TOLERANCE" => "0" }) }
         .to raise_error(CrosstalkCleaner::ConfigurationError, /positive integer/)
+    end
+
+    it "rejects a non-numeric min duration" do
+      expect { build(env: { "SILENCEDETECT_MIN_DURATION" => "soon" }) }
+        .to raise_error(CrosstalkCleaner::ConfigurationError, /positive number/)
+    end
+
+    it "rejects a zero or negative min duration" do
+      expect { build(env: { "SILENCEDETECT_MIN_DURATION" => "0" }) }
+        .to raise_error(CrosstalkCleaner::ConfigurationError, /positive number/)
     end
   end
 end

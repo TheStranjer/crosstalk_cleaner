@@ -8,12 +8,21 @@ module CrosstalkCleaner
   # intervals it owns (per OverlapResolver), then all tracks are summed. Because
   # ownership intervals never overlap, the sum is the single active speaker.
   class AudioMixer
+    RESAMPLE_RATE = 48_000
+    CHANNEL_LAYOUT = "stereo"
+
     # @param ffmpeg [Ffmpeg] the ffmpeg shell-out wrapper
     # @param buffer_s [Float] padding, in seconds, added to each side of every
     #   owned block so a speaker fades in/out instead of cutting in abruptly.
-    def initialize(ffmpeg, buffer_s: 0.0)
+    # @param resample_rate [Integer] sample rate every track is resampled to
+    #   before mixing, in Hz.
+    # @param channel_layout [String] channel layout every track is conformed to
+    #   before mixing (e.g. "stereo", "mono").
+    def initialize(ffmpeg, buffer_s: 0.0, resample_rate: RESAMPLE_RATE, channel_layout: CHANNEL_LAYOUT)
       @ffmpeg = ffmpeg
       @buffer_s = buffer_s
+      @resample_rate = resample_rate
+      @channel_layout = channel_layout
     end
 
     # @param inputs [Array<String>] input file paths, in priority order
@@ -45,7 +54,7 @@ module CrosstalkCleaner
     def filter_complex(track_count, ownership_by_track)
       chains = (0...track_count).map do |index|
         intervals = ownership_by_track.fetch(index, [])
-        "[#{index}:a]aresample=48000,aformat=channel_layouts=stereo," \
+        "[#{index}:a]aresample=#{@resample_rate},aformat=channel_layouts=#{@channel_layout}," \
           "volume=0:enable='#{mute_expression(intervals)}'[a#{index}]"
       end
       labels = (0...track_count).map { |index| "[a#{index}]" }.join

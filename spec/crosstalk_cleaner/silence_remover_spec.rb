@@ -10,6 +10,12 @@ RSpec.describe CrosstalkCleaner::SilenceRemover do
       expect(remover.silence_filter(0.75))
         .to eq("silenceremove=stop_periods=-1:stop_duration=0.750:stop_threshold=-30dB")
     end
+
+    it "uses the configured noise floor as the threshold" do
+      quiet = described_class.new(ffmpeg, noise_floor: "-50dB")
+      expect(quiet.silence_filter(0.75))
+        .to eq("silenceremove=stop_periods=-1:stop_duration=0.750:stop_threshold=-50dB")
+    end
   end
 
   describe "#build_args" do

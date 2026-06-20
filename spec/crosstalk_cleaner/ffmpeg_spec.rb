@@ -39,6 +39,15 @@ RSpec.describe CrosstalkCleaner::Ffmpeg do
               "-af", "silencedetect=noise=-40dB:d=0.2", "-f", "null", "-")
     end
 
+    it "defaults the filter to the noise and min duration given at construction" do
+      configured = described_class.new(silencedetect_noise: "-55dB", silencedetect_min_duration: 0.5)
+      allow(Open3).to receive(:capture3).and_return(["", "", ok])
+      configured.silencedetect("a.wav")
+      expect(Open3).to have_received(:capture3)
+        .with("ffmpeg", "-hide_banner", "-nostats", "-i", "a.wav",
+              "-af", "silencedetect=noise=-55dB:d=0.5", "-f", "null", "-")
+    end
+
     it "raises when ffmpeg fails" do
       allow(Open3).to receive(:capture3).and_return(["", "nope", fail_status])
       expect { ffmpeg.silencedetect("a.wav") }.to raise_error(CrosstalkCleaner::FfmpegError, /silencedetect failed/)

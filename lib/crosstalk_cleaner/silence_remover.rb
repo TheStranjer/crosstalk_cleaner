@@ -7,8 +7,12 @@ module CrosstalkCleaner
   class SilenceRemover
     NOISE_FLOOR = "-30dB"
 
-    def initialize(ffmpeg)
+    # @param ffmpeg [Ffmpeg] the ffmpeg shell-out wrapper
+    # @param noise_floor [String] amplitude below which audio counts as silence
+    #   (any ffmpeg volume expression, e.g. "-30dB").
+    def initialize(ffmpeg, noise_floor: NOISE_FLOOR)
       @ffmpeg = ffmpeg
+      @noise_floor = noise_floor
     end
 
     # @param input [String] the crosstalk-cleaned intermediate file
@@ -27,7 +31,7 @@ module CrosstalkCleaner
     # up to stop_duration seconds of it.
     def silence_filter(limit_s)
       format("silenceremove=stop_periods=-1:stop_duration=%<limit>.3f:stop_threshold=%<floor>s",
-             limit: limit_s, floor: NOISE_FLOOR)
+             limit: limit_s, floor: @noise_floor)
     end
   end
 end

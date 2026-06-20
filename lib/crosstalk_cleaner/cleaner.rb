@@ -12,14 +12,15 @@ module CrosstalkCleaner
   # Orchestrates the full pipeline: detect speech per track, resolve crosstalk
   # into a single file, then strip dead silence.
   class Cleaner
-    def initialize(config, ffmpeg: Ffmpeg.new, logger: $stdout)
+    def initialize(config, ffmpeg: nil, logger: $stdout)
       @config = config
-      @ffmpeg = ffmpeg
+      @ffmpeg = ffmpeg || build_ffmpeg(config)
       @logger = logger
-      @detector = SilenceDetector.new(ffmpeg)
+      @detector = SilenceDetector.new(@ffmpeg)
       @resolver = OverlapResolver.new(tolerance_s: config.crosstalk_tolerance_s)
-      @mixer = AudioMixer.new(ffmpeg, buffer_s: config.block_buffer_s)
-      @remover = SilenceRemover.new(ffmpeg)
+      @mixer = AudioMixer.new(@ffmpeg, buffer_s: config.block_buffer_s,
+                                       resample_rate: config.resample_rate, channel_layout: config.channel_layout)
+      @remover = SilenceRemover.new(@ffmpeg, noise_floor: config.noise_floor)
     end
 
     # Runs the pipeline and returns the path to the final output file.
@@ -47,6 +48,12 @@ module CrosstalkCleaner
     end
 
     private
+
+    def build_ffmpeg(config)
+      Ffmpeg.new(ffmpeg_bin: config.ffmpeg_bin, ffprobe_bin: config.ffprobe_bin,
+                 silencedetect_noise: config.silencedetect_noise,
+                 silencedetect_min_duration: config.silencedetect_min_duration)
+    end
 
     def log(message)
       @logger.puts(message)

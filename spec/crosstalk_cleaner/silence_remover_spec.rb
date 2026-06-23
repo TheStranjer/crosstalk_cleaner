@@ -22,6 +22,18 @@ RSpec.describe CrosstalkCleaner::SilenceRemover do
       expect(raw.silence_filter(0.75))
         .to eq("silenceremove=stop_periods=-1:stop_duration=0.750:stop_threshold=-30dB")
     end
+
+    it "keeps the block buffer at each gap's trailing edge so padded onsets survive" do
+      buffered = described_class.new(ffmpeg, buffer_s: 0.3)
+      expect(buffered.silence_filter(0.75))
+        .to eq("silenceremove=stop_periods=-1:stop_duration=0.750:stop_threshold=-30dB:stop_silence=0.300," \
+               "adeclick,adeclick")
+    end
+
+    it "omits the stop_silence clause when there is no block buffer" do
+      expect(remover.silence_filter(0.75))
+        .not_to include("stop_silence")
+    end
   end
 
   describe "#build_args" do

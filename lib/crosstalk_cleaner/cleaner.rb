@@ -23,7 +23,8 @@ module CrosstalkCleaner
       @normalizer = VolumeNormalizer.new(@ffmpeg, target: config.normalize_target, buffer_s: config.block_buffer_s)
       @mixer = AudioMixer.new(@ffmpeg, buffer_s: config.block_buffer_s, fade_s: config.fade_s,
                                        resample_rate: config.resample_rate, channel_layout: config.channel_layout)
-      @remover = SilenceRemover.new(@ffmpeg, noise_floor: config.noise_floor, declick: config.declick)
+      @remover = SilenceRemover.new(@ffmpeg, noise_floor: config.noise_floor, declick: config.declick,
+                                             buffer_s: config.block_buffer_s)
     end
 
     # Runs the pipeline and returns the path to the final output file.

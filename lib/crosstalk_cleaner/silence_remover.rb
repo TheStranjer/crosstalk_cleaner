@@ -18,8 +18,11 @@ module CrosstalkCleaner
     # @param input [String] the crosstalk-cleaned intermediate file
     # @param output [String] the final output path
     # @param limit_s [Float] maximum silence duration to keep, in seconds
-    def render(input, output, limit_s)
-      @ffmpeg.run(build_args(input, output, limit_s))
+    #
+    # An optional block is forwarded to Ffmpeg#run, which calls it with the output
+    # time written so far (in seconds) as the trim progresses.
+    def render(input, output, limit_s, &)
+      @ffmpeg.run(build_args(input, output, limit_s), &)
       output
     end
 

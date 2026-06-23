@@ -41,8 +41,12 @@ module CrosstalkCleaner
     # @return [Hash{Integer=>Float}] gain in dB per track with measurable audio;
     #   tracks that own too little audio or measure as silent are omitted and
     #   left at their original level.
-    def gains(inputs, ownership_by_track)
-      measured = measure_all(inputs, ownership_by_track)
+    #
+    # An optional block wraps each track that is actually measured: it is called
+    # with the track index and a block that, given a progress sink, runs the
+    # measurement (so a caller can drape a progress bar around the ebur128 pass).
+    def gains(inputs, ownership_by_track, &)
+      measured = measure_all(inputs, ownership_by_track, &)
       return {} if measured.empty?
 
       target = resolve_target(measured.values)
@@ -52,25 +56,34 @@ module CrosstalkCleaner
     end
 
     # Integrated loudness (LUFS) of +path+ over its owned intervals, or nil when
-    # the selection is effectively silent (ebur128 reports -inf/nan).
-    def measure(path, intervals)
+    # the selection is effectively silent (ebur128 reports -inf/nan). An optional
+    # block is forwarded to Ffmpeg#ebur128 to report measurement progress.
+    def measure(path, intervals, &)
       expression = IntervalExpression.owned(intervals, @buffer_s)
-      parse_loudness(@ffmpeg.ebur128(path, expression))
+      parse_loudness(@ffmpeg.ebur128(path, expression, &))
     end
 
     private
 
     # Measures every track that owns enough audio to trust, keyed by track index.
-    def measure_all(inputs, ownership_by_track)
+    def measure_all(inputs, ownership_by_track, &measure_block)
       measured = {}
       inputs.each_index do |index|
         intervals = ownership_by_track.fetch(index, [])
         next if owned_duration(intervals) < MIN_OWNED_DURATION_S
 
-        loudness = measure(inputs[index], intervals)
+        loudness = measure_track(inputs[index], intervals, index, &measure_block)
         measured[index] = loudness unless loudness.nil?
       end
       measured
+    end
+
+    # Measures one track, letting an optional caller block wrap the pass (e.g. to
+    # show a progress bar) while the actual measurement stays here.
+    def measure_track(path, intervals, index, &measure_block)
+      return measure(path, intervals) unless measure_block
+
+      measure_block.call(index) { |on_progress| measure(path, intervals, &on_progress) }
     end
 
     # The common level to aim for: a fixed target when one was given, otherwise

@@ -50,6 +50,18 @@ RSpec.describe CrosstalkCleaner::VolumeNormalizer do
       expect(gains).to eq({})
       expect(ffmpeg).not_to have_received(:ebur128)
     end
+
+    it "wraps each measured track with the given block, skipping unmeasured ones" do
+      allow(ffmpeg).to receive(:ebur128).and_return(summary(-20.0))
+      ownership = { 0 => [interval(0.0, 5.0, 0)], 1 => [interval(0.0, 1.0, 1)] }
+
+      wrapped = []
+      normalizer.gains(%w[a.wav b.wav], ownership) do |index, &measure|
+        wrapped << index
+        measure.call(nil)
+      end
+      expect(wrapped).to eq([0]) # track 1 owns too little to measure
+    end
   end
 
   describe "#gains with an auto (median) target" do

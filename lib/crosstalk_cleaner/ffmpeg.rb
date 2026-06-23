@@ -31,25 +31,23 @@ module CrosstalkCleaner
     end
 
     # Runs silencedetect over +path+ and returns ffmpeg's stderr text for parsing.
-    def silencedetect(path, noise: @silencedetect_noise, min_duration: @silencedetect_min_duration)
+    # With a block the analysis pass is streamed and the block is called with the
+    # input time scanned so far, in seconds, each time ffmpeg reports progress.
+    def silencedetect(path, noise: @silencedetect_noise, min_duration: @silencedetect_min_duration, &)
       filter = "silencedetect=noise=#{noise}:d=#{min_duration}"
       args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path, "-af", filter, "-f", "null", "-"]
-      _stdout, stderr, status = Open3.capture3(*args)
-      raise FfmpegError, "silencedetect failed for #{path}: #{stderr}" unless status.success?
-
-      stderr
+      analyze(args, "silencedetect failed for #{path}", &)
     end
 
     # Measures EBU R128 loudness over only the audio selected by +select_expr+
     # (an aselect expression covering a track's owned intervals) and returns
-    # ffmpeg's stderr text, which carries the integrated-loudness summary.
-    def ebur128(path, select_expr)
+    # ffmpeg's stderr text, which carries the integrated-loudness summary. With a
+    # block the pass is streamed and the block is called with the measured time so
+    # far, in seconds, each time ffmpeg reports progress.
+    def ebur128(path, select_expr, &)
       filter = "aselect='#{select_expr}',ebur128"
       args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path, "-af", filter, "-f", "null", "-"]
-      _stdout, stderr, status = Open3.capture3(*args)
-      raise FfmpegError, "ebur128 failed for #{path}: #{stderr}" unless status.success?
-
-      stderr
+      analyze(args, "ebur128 failed for #{path}", &)
     end
 
     # Executes an ffmpeg argument vector (without the leading binary name). When
@@ -61,6 +59,35 @@ module CrosstalkCleaner
     end
 
     private
+
+    # Runs an analysis pass (a "-f null -" render whose stderr carries the filter's
+    # measurements) and returns that stderr. Without a block it is captured in one
+    # shot; with one the pass is streamed so progress can be reported as it scans.
+    def analyze(args, error_label, &on_progress)
+      on_progress ? analyze_streamed(args, error_label, &on_progress) : analyze_captured(args, error_label)
+    end
+
+    def analyze_captured(args, error_label)
+      _stdout, stderr, status = Open3.capture3(*args)
+      raise FfmpegError, "#{error_label}: #{stderr}" unless status.success?
+
+      stderr
+    end
+
+    # Adds -progress so ffmpeg streams key=value progress lines on stdout while the
+    # filter's own output still lands on stderr (collected on a thread and returned).
+    def analyze_streamed(args, error_label, &on_progress)
+      full = args.dup.insert(1, "-progress", "pipe:1")
+      Open3.popen3(*full) do |stdin, stdout, stderr, wait_thread|
+        stdin.close
+        collect = Thread.new { stderr.read }
+        stdout.each_line { |line| report_progress(line, on_progress) }
+        captured = collect.value
+        raise FfmpegError, "#{error_label}: #{captured}" unless wait_thread.value.success?
+
+        captured
+      end
+    end
 
     def run_captured(args)
       full = [@ffmpeg_bin, "-hide_banner", "-y", *args]

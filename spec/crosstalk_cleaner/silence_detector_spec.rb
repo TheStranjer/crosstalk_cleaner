@@ -63,5 +63,14 @@ RSpec.describe CrosstalkCleaner::SilenceDetector do
       expect(detector.speech_intervals("a.wav", 2))
         .to eq([interval(0.0, 2.0, 2), interval(4.0, 10.0, 2)])
     end
+
+    it "forwards a progress block to silencedetect" do
+      allow(ffmpeg).to receive(:duration).with("a.wav").and_return(10.0)
+      allow(ffmpeg).to receive(:silencedetect).with("a.wav").and_yield(3.0).and_return("")
+
+      seconds = []
+      detector.speech_intervals("a.wav", 0) { |s| seconds << s }
+      expect(seconds).to eq([3.0])
+    end
   end
 end

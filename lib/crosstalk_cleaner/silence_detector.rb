@@ -14,9 +14,11 @@ module CrosstalkCleaner
     end
 
     # @return [Array<Interval>] speech intervals for the track at +track_index+.
-    def speech_intervals(path, track_index)
+    # An optional block is forwarded to Ffmpeg#silencedetect, which calls it with
+    # the time scanned so far (in seconds) as detection progresses.
+    def speech_intervals(path, track_index, &)
       duration = @ffmpeg.duration(path)
-      output = @ffmpeg.silencedetect(path)
+      output = @ffmpeg.silencedetect(path, &)
       silences = parse_silences(output, duration)
       invert(silences, duration, track_index)
     end

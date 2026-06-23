@@ -11,11 +11,13 @@ module CrosstalkCleaner
     # @param logger [IO] sink to draw on (typically $stdout)
     # @param label [String] the text shown ahead of the bar
     # @param total [Integer] the count that represents 100%
+    # @param unit [String] the noun shown after the counts (e.g. "samples", "ms")
     # @param width [Integer] bar width in characters
-    def initialize(logger, label, total, width: BAR_WIDTH)
+    def initialize(logger, label, total, unit: "samples", width: BAR_WIDTH)
       @logger = logger
       @label = label
       @total = total.to_i
+      @unit = unit
       @width = width
       @tty = logger.respond_to?(:tty?) && logger.tty?
       @started = false
@@ -56,9 +58,9 @@ module CrosstalkCleaner
       ratio = @total.zero? ? 1.0 : current.to_f / @total
       filled = (ratio * @width).round
       bar = ("█" * filled) + ("░" * (@width - filled))
-      format("%<label>s [%<bar>s] %<pct>3d%% (%<done>s/%<total>s samples)",
+      format("%<label>s [%<bar>s] %<pct>3d%% (%<done>s/%<total>s %<unit>s)",
              label: @label, bar: bar, pct: (ratio * 100).round,
-             done: commas(current), total: commas(@total))
+             done: commas(current), total: commas(@total), unit: @unit)
     end
 
     def flush

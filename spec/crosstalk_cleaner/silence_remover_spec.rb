@@ -38,5 +38,14 @@ RSpec.describe CrosstalkCleaner::SilenceRemover do
       expect(remover.render("in.wav", "out.wav", 0.75)).to eq("out.wav")
       expect(ffmpeg).to have_received(:run).with(expected)
     end
+
+    it "forwards a progress block to ffmpeg" do
+      expected = remover.build_args("in.wav", "out.wav", 0.75)
+      allow(ffmpeg).to receive(:run).with(expected).and_yield(1.5)
+
+      seconds = []
+      remover.render("in.wav", "out.wav", 0.75) { |s| seconds << s }
+      expect(seconds).to eq([1.5])
+    end
   end
 end

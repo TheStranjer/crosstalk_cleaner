@@ -27,6 +27,13 @@ RSpec.describe CrosstalkCleaner::ProgressBar do
       expect(io.string).to end_with("\n")
     end
 
+    it "labels the counts with a custom unit when one is given" do
+      bar = described_class.new(io, "Detecting speech", 1000, unit: "ms")
+      bar.start
+      bar.update(250)
+      expect(io.string).to include("(250/1,000 ms)")
+    end
+
     it "never reports past 100% even if handed more than the total" do
       bar = described_class.new(io, "Mixing", 100)
       bar.start

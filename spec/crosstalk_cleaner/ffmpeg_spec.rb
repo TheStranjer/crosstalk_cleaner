@@ -71,6 +71,47 @@ RSpec.describe CrosstalkCleaner::Ffmpeg do
     end
   end
 
+  describe "#silencedetect with a progress block" do
+    it "streams progress on stdout while still returning the marker stderr" do
+      wait = instance_double(Thread, value: ok)
+      allow(Open3).to receive(:popen3)
+        .and_yield(StringIO.new, StringIO.new("out_time=00:00:03.000000\nprogress=end\n"),
+                   StringIO.new("silence_start: 1.0"), wait)
+
+      seconds = []
+      stderr = ffmpeg.silencedetect("a.wav") { |s| seconds << s }
+
+      expect(stderr).to eq("silence_start: 1.0")
+      expect(seconds).to eq([3.0])
+      expect(Open3).to have_received(:popen3)
+        .with("ffmpeg", "-progress", "pipe:1", "-hide_banner", "-nostats", "-i", "a.wav",
+              "-af", "silencedetect=noise=-30dB:d=0.1", "-f", "null", "-")
+    end
+
+    it "raises with the captured stderr when the streamed scan fails" do
+      wait = instance_double(Thread, value: fail_status)
+      allow(Open3).to receive(:popen3)
+        .and_yield(StringIO.new, StringIO.new(""), StringIO.new("nope"), wait)
+      expect { ffmpeg.silencedetect("a.wav") { |s| s } }
+        .to raise_error(CrosstalkCleaner::FfmpegError, /silencedetect failed.*nope/)
+    end
+  end
+
+  describe "#ebur128 with a progress block" do
+    it "streams progress on stdout while still returning the summary stderr" do
+      wait = instance_double(Thread, value: ok)
+      allow(Open3).to receive(:popen3)
+        .and_yield(StringIO.new, StringIO.new("out_time=00:00:02.000000\nprogress=end\n"),
+                   StringIO.new("I: -18.0 LUFS"), wait)
+
+      seconds = []
+      stderr = ffmpeg.ebur128("a.wav", "between(t,0,5)") { |s| seconds << s }
+
+      expect(stderr).to eq("I: -18.0 LUFS")
+      expect(seconds).to eq([2.0])
+    end
+  end
+
   describe "#run" do
     it "prepends the binary and standard flags" do
       allow(Open3).to receive(:capture3).and_return(["", "", ok])

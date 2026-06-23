@@ -6,7 +6,7 @@ module CrosstalkCleaner
   # Resolves runtime configuration from the command-line arguments and the
   # supported environment variables (OUTPUT, SILENCE_LIMIT, CROSSTALK_TOLERANCE,
   # BLOCK_BUFFER, FADE, SILENCEDETECT_NOISE, SILENCEDETECT_MIN_DURATION,
-  # NOISE_FLOOR, RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE,
+  # NOISE_FLOOR, DECLICK, RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE,
   # NORMALIZE_TARGET).
   class Config
     DEFAULT_SILENCE_LIMIT_MS = 750
@@ -16,6 +16,7 @@ module CrosstalkCleaner
     DEFAULT_SILENCEDETECT_NOISE = "-30dB"
     DEFAULT_SILENCEDETECT_MIN_DURATION = 0.1
     DEFAULT_NOISE_FLOOR = "-30dB"
+    DEFAULT_DECLICK = true
     DEFAULT_RESAMPLE_RATE = 48_000
     DEFAULT_CHANNEL_LAYOUT = "stereo"
     DEFAULT_FFMPEG_BIN = "ffmpeg"
@@ -25,7 +26,7 @@ module CrosstalkCleaner
     FALSEY = %w[0 false no off].freeze
 
     attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms, :fade_ms,
-                :silencedetect_noise, :silencedetect_min_duration, :noise_floor, :resample_rate,
+                :silencedetect_noise, :silencedetect_min_duration, :noise_floor, :declick, :resample_rate,
                 :channel_layout, :ffmpeg_bin, :ffprobe_bin, :volume_normalize, :normalize_target
 
     # @param argv [Array<String>] input wav files in priority order (first = top)
@@ -78,6 +79,7 @@ module CrosstalkCleaner
       @silencedetect_min_duration = positive_float(env["SILENCEDETECT_MIN_DURATION"],
                                                    DEFAULT_SILENCEDETECT_MIN_DURATION, "SILENCEDETECT_MIN_DURATION")
       @noise_floor = string_value(env["NOISE_FLOOR"], DEFAULT_NOISE_FLOOR)
+      @declick = boolean_value(env["DECLICK"], DEFAULT_DECLICK)
     end
 
     def resolve_normalization(env)

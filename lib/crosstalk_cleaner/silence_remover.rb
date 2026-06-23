@@ -10,9 +10,12 @@ module CrosstalkCleaner
     # @param ffmpeg [Ffmpeg] the ffmpeg shell-out wrapper
     # @param noise_floor [String] amplitude below which audio counts as silence
     #   (any ffmpeg volume expression, e.g. "-30dB").
-    def initialize(ffmpeg, noise_floor: NOISE_FLOOR)
+    # @param declick [Boolean] whether to repair the splice transients
+    #   silenceremove leaves behind (see #silence_filter). On by default.
+    def initialize(ffmpeg, noise_floor: NOISE_FLOOR, declick: true)
       @ffmpeg = ffmpeg
       @noise_floor = noise_floor
+      @declick = declick
     end
 
     # @param input [String] the crosstalk-cleaned intermediate file
@@ -31,10 +34,15 @@ module CrosstalkCleaner
     end
 
     # silenceremove with stop_periods=-1 trims silence wherever it occurs, keeping
-    # up to stop_duration seconds of it.
+    # up to stop_duration seconds of it. It splices the kept audio with a hard cut,
+    # though, which clicks audibly whenever a cut lands in low-level room tone
+    # rather than true digital silence (a pause or breath inside a speaker's turn).
+    # adeclick repairs those splice transients in one pass, so it is appended
+    # unless declicking is switched off.
     def silence_filter(limit_s)
-      format("silenceremove=stop_periods=-1:stop_duration=%<limit>.3f:stop_threshold=%<floor>s",
-             limit: limit_s, floor: @noise_floor)
+      remove = format("silenceremove=stop_periods=-1:stop_duration=%<limit>.3f:stop_threshold=%<floor>s",
+                      limit: limit_s, floor: @noise_floor)
+      @declick ? "#{remove},adeclick" : remove
     end
   end
 end

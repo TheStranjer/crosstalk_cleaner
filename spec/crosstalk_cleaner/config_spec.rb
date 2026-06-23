@@ -106,6 +106,10 @@ RSpec.describe CrosstalkCleaner::Config do
     it "defaults the normalize target to auto (data-driven median)" do
       expect(config.normalize_target).to eq(:auto)
     end
+
+    it "defaults declicking to on" do
+      expect(config.declick).to be(true)
+    end
   end
 
   describe "environment overrides" do
@@ -153,6 +157,14 @@ RSpec.describe CrosstalkCleaner::Config do
 
     it "honours SILENCEDETECT_MIN_DURATION" do
       expect(build(env: { "SILENCEDETECT_MIN_DURATION" => "0.25" }).silencedetect_min_duration).to eq(0.25)
+    end
+
+    it "disables declicking for DECLICK=0" do
+      expect(build(env: { "DECLICK" => "0" }).declick).to be(false)
+    end
+
+    it "keeps declicking on for any other DECLICK value" do
+      expect(build(env: { "DECLICK" => "1" }).declick).to be(true)
     end
 
     it "honours NOISE_FLOOR" do

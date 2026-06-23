@@ -8,6 +8,7 @@ require_relative "overlap_resolver"
 require_relative "volume_normalizer"
 require_relative "audio_mixer"
 require_relative "silence_remover"
+require_relative "progress_bar"
 
 module CrosstalkCleaner
   # Orchestrates the full pipeline: detect speech per track, resolve crosstalk
@@ -31,8 +32,7 @@ module CrosstalkCleaner
       gains = compute_gains(ownership)
       Dir.mktmpdir("crosstalk_cleaner") do |dir|
         intermediate = File.join(dir, "crosstalk_cleaned.wav")
-        log "Collapsing #{@config.inputs.size} tracks into a single crosstalk-free file"
-        @mixer.render(@config.inputs, ownership, intermediate, gains: gains)
+        collapse(ownership, gains, intermediate)
         log "Removing dead silence (keeping at most #{@config.silence_limit_ms}ms)"
         @remover.render(intermediate, @config.output, @config.silence_limit_s)
       end
@@ -51,6 +51,25 @@ module CrosstalkCleaner
     end
 
     private
+
+    # Renders the crosstalk-free mix while a progress bar tracks how many output
+    # samples ffmpeg has produced against the total the mix will contain.
+    def collapse(ownership, gains, intermediate)
+      label = "Collapsing #{@config.inputs.size} tracks into a single crosstalk-free file"
+      rate = @config.resample_rate
+      bar = ProgressBar.new(@logger, label, total_samples(rate))
+      bar.start
+      @mixer.render(@config.inputs, ownership, intermediate, gains: gains) do |seconds|
+        bar.update((seconds * rate).round)
+      end
+      bar.finish
+    end
+
+    # Total output samples the mix will hold: the longest input drives the length
+    # (amix runs to the longest stream) at the mix sample rate.
+    def total_samples(rate)
+      (@config.inputs.map { |path| @ffmpeg.duration(path) }.max * rate).round
+    end
 
     # Measures each track over its owned audio and returns per-track gains, unless
     # normalization is switched off (then the mixer runs exactly as before).

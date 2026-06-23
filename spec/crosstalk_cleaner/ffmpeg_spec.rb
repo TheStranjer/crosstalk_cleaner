@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "stringio"
 
 RSpec.describe CrosstalkCleaner::Ffmpeg do
   subject(:ffmpeg) { described_class.new(ffmpeg_bin: "ffmpeg", ffprobe_bin: "ffprobe") }
@@ -86,6 +87,40 @@ RSpec.describe CrosstalkCleaner::Ffmpeg do
     it "raises on failure" do
       allow(Open3).to receive(:capture3).and_return(["", "bad", fail_status])
       expect { ffmpeg.run(["x"]) }.to raise_error(CrosstalkCleaner::FfmpegError, /ffmpeg failed/)
+    end
+  end
+
+  describe "#run with a progress block" do
+    def streaming(stdout_text, status, stderr_text = "")
+      wait = instance_double(Thread, value: status)
+      allow(Open3).to receive(:popen3)
+        .and_yield(StringIO.new, StringIO.new(stdout_text), StringIO.new(stderr_text), wait)
+    end
+
+    it "asks ffmpeg for machine-readable progress on stdout" do
+      streaming("progress=end\n", ok)
+      ffmpeg.run(["-i", "a.wav", "out.wav"]) { |secs| secs }
+      expect(Open3).to have_received(:popen3)
+        .with("ffmpeg", "-hide_banner", "-y", "-nostats", "-progress", "pipe:1", "-i", "a.wav", "out.wav")
+    end
+
+    it "yields the rendered output time in seconds for each report" do
+      streaming("out_time=00:00:01.500000\nprogress=continue\nout_time=00:01:00.000000\nprogress=end\n", ok)
+      seconds = []
+      ffmpeg.run(["x"]) { |s| seconds << s }
+      expect(seconds).to eq([1.5, 60.0])
+    end
+
+    it "ignores progress lines whose time is not yet known" do
+      streaming("out_time=N/A\nout_time=00:00:02.000000\nprogress=end\n", ok)
+      seconds = []
+      ffmpeg.run(["x"]) { |s| seconds << s }
+      expect(seconds).to eq([2.0])
+    end
+
+    it "raises when the streamed render fails" do
+      streaming("", fail_status, "boom")
+      expect { ffmpeg.run(["x"]) { |secs| secs } }.to raise_error(CrosstalkCleaner::FfmpegError, /ffmpeg failed: boom/)
     end
   end
 end

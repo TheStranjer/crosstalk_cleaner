@@ -45,11 +45,14 @@ module CrosstalkCleaner
     # The filtergraph grows with the number of speech intervals and would overflow
     # the OS argv limit (Errno::E2BIG) if passed inline, so it is written to a
     # temp script file and handed to ffmpeg via -filter_complex_script.
-    def render(inputs, ownership_by_track, output, gains: {})
+    #
+    # An optional block is forwarded to Ffmpeg#run, which calls it with the output
+    # time rendered so far (in seconds) as the mix progresses.
+    def render(inputs, ownership_by_track, output, gains: {}, &progress)
       Tempfile.create(["crosstalk_filter", ".txt"]) do |script|
         script.write(filter_complex(inputs.size, ownership_by_track, gains))
         script.flush
-        @ffmpeg.run(build_args(inputs, script.path, output))
+        @ffmpeg.run(build_args(inputs, script.path, output), &progress)
       end
       output
     end

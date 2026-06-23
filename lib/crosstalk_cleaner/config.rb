@@ -5,12 +5,14 @@ require "pathname"
 module CrosstalkCleaner
   # Resolves runtime configuration from the command-line arguments and the
   # supported environment variables (OUTPUT, SILENCE_LIMIT, CROSSTALK_TOLERANCE,
-  # BLOCK_BUFFER, SILENCEDETECT_NOISE, SILENCEDETECT_MIN_DURATION, NOISE_FLOOR,
-  # RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE, NORMALIZE_TARGET).
+  # BLOCK_BUFFER, FADE, SILENCEDETECT_NOISE, SILENCEDETECT_MIN_DURATION,
+  # NOISE_FLOOR, RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE,
+  # NORMALIZE_TARGET).
   class Config
     DEFAULT_SILENCE_LIMIT_MS = 750
     DEFAULT_CROSSTALK_TOLERANCE_MS = 300
     DEFAULT_BLOCK_BUFFER_MS = 100
+    DEFAULT_FADE_MS = 10
     DEFAULT_SILENCEDETECT_NOISE = "-30dB"
     DEFAULT_SILENCEDETECT_MIN_DURATION = 0.1
     DEFAULT_NOISE_FLOOR = "-30dB"
@@ -22,7 +24,7 @@ module CrosstalkCleaner
     DEFAULT_NORMALIZE_TARGET = :auto
     FALSEY = %w[0 false no off].freeze
 
-    attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms,
+    attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms, :fade_ms,
                 :silencedetect_noise, :silencedetect_min_duration, :noise_floor, :resample_rate,
                 :channel_layout, :ffmpeg_bin, :ffprobe_bin, :volume_normalize, :normalize_target
 
@@ -50,6 +52,11 @@ module CrosstalkCleaner
       block_buffer_ms / 1000.0
     end
 
+    # Fade (gain ramp at each owned block edge) expressed in seconds.
+    def fade_s
+      fade_ms / 1000.0
+    end
+
     private
 
     def resolve_settings(env)
@@ -57,15 +64,20 @@ module CrosstalkCleaner
       @crosstalk_tolerance_ms = positive_int(env["CROSSTALK_TOLERANCE"], DEFAULT_CROSSTALK_TOLERANCE_MS,
                                              "CROSSTALK_TOLERANCE")
       @block_buffer_ms = positive_int(env["BLOCK_BUFFER"], DEFAULT_BLOCK_BUFFER_MS, "BLOCK_BUFFER")
-      @silencedetect_noise = string_value(env["SILENCEDETECT_NOISE"], DEFAULT_SILENCEDETECT_NOISE)
-      @silencedetect_min_duration = positive_float(env["SILENCEDETECT_MIN_DURATION"],
-                                                   DEFAULT_SILENCEDETECT_MIN_DURATION, "SILENCEDETECT_MIN_DURATION")
-      @noise_floor = string_value(env["NOISE_FLOOR"], DEFAULT_NOISE_FLOOR)
+      @fade_ms = positive_int(env["FADE"], DEFAULT_FADE_MS, "FADE", allow_zero: true)
       @resample_rate = positive_int(env["RESAMPLE_RATE"], DEFAULT_RESAMPLE_RATE, "RESAMPLE_RATE")
       @channel_layout = string_value(env["CHANNEL_LAYOUT"], DEFAULT_CHANNEL_LAYOUT)
       @ffmpeg_bin = string_value(env["FFMPEG_BIN"], DEFAULT_FFMPEG_BIN)
       @ffprobe_bin = string_value(env["FFPROBE_BIN"], DEFAULT_FFPROBE_BIN)
+      resolve_detection(env)
       resolve_normalization(env)
+    end
+
+    def resolve_detection(env)
+      @silencedetect_noise = string_value(env["SILENCEDETECT_NOISE"], DEFAULT_SILENCEDETECT_NOISE)
+      @silencedetect_min_duration = positive_float(env["SILENCEDETECT_MIN_DURATION"],
+                                                   DEFAULT_SILENCEDETECT_MIN_DURATION, "SILENCEDETECT_MIN_DURATION")
+      @noise_floor = string_value(env["NOISE_FLOOR"], DEFAULT_NOISE_FLOOR)
     end
 
     def resolve_normalization(env)
@@ -87,13 +99,16 @@ module CrosstalkCleaner
       Pathname.new(@inputs.first).expand_path.dirname.join("output.wav").to_s
     end
 
-    def positive_int(value, default, name)
+    # Integer setting. With +allow_zero+ the value may be zero (for settings where
+    # 0 means "off"); otherwise it must be strictly positive.
+    def positive_int(value, default, name, allow_zero: false)
       return default if value.nil? || value.empty?
 
       parsed = Integer(value, exception: false)
-      return parsed if parsed&.positive?
+      return parsed if parsed && (allow_zero ? !parsed.negative? : parsed.positive?)
 
-      raise ConfigurationError, "#{name} must be a positive integer (got #{value.inspect})"
+      qualifier = allow_zero ? "non-negative" : "positive"
+      raise ConfigurationError, "#{name} must be a #{qualifier} integer (got #{value.inspect})"
     end
 
     def positive_float(value, default, name)

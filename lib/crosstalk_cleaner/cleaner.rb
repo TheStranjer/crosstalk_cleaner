@@ -20,7 +20,7 @@ module CrosstalkCleaner
       @detector = SilenceDetector.new(@ffmpeg)
       @resolver = OverlapResolver.new(tolerance_s: config.crosstalk_tolerance_s)
       @normalizer = VolumeNormalizer.new(@ffmpeg, target: config.normalize_target, buffer_s: config.block_buffer_s)
-      @mixer = AudioMixer.new(@ffmpeg, buffer_s: config.block_buffer_s,
+      @mixer = AudioMixer.new(@ffmpeg, buffer_s: config.block_buffer_s, fade_s: config.fade_s,
                                        resample_rate: config.resample_rate, channel_layout: config.channel_layout)
       @remover = SilenceRemover.new(@ffmpeg, noise_floor: config.noise_floor)
     end

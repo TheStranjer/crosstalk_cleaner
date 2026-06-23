@@ -71,6 +71,33 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
         "[a0]amix=inputs=1:normalize=0[mix]"
       )
     end
+
+    context "with a fade" do
+      subject(:mixer) { described_class.new(ffmpeg, buffer_s: 0.1, fade_s: 0.01) }
+
+      it "ramps the volume via a smooth envelope on small frames" do
+        ownership = { 0 => [interval(1.0, 2.0, 0)], 1 => [] }
+        expect(mixer.filter_complex(2, ownership)).to eq(
+          "[0:a]aresample=48000,aformat=channel_layouts=stereo," \
+          "asetnsamples=n=32:p=0," \
+          "volume='min(1,clip(min((t-0.900)/0.010,(2.100-t)/0.010),0,1))':eval=frame[a0];" \
+          "[1:a]aresample=48000,aformat=channel_layouts=stereo," \
+          "asetnsamples=n=32:p=0,volume='0':eval=frame[a1];" \
+          "[a0][a1]amix=inputs=2:normalize=0[mix]"
+        )
+      end
+
+      it "still applies a normalization gain after the envelope" do
+        ownership = { 0 => [interval(1.0, 2.0, 0)] }
+        expect(mixer.filter_complex(1, ownership, { 0 => 2.5 })).to eq(
+          "[0:a]aresample=48000,aformat=channel_layouts=stereo," \
+          "asetnsamples=n=32:p=0," \
+          "volume='min(1,clip(min((t-0.900)/0.010,(2.100-t)/0.010),0,1))':eval=frame," \
+          "volume=2.50dB[a0];" \
+          "[a0]amix=inputs=1:normalize=0[mix]"
+        )
+      end
+    end
   end
 
   describe "#build_args" do

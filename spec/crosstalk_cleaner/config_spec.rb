@@ -51,6 +51,14 @@ RSpec.describe CrosstalkCleaner::Config do
       expect(config.block_buffer_s).to eq(0.1)
     end
 
+    it "defaults the fade to 10ms" do
+      expect(config.fade_ms).to eq(10)
+    end
+
+    it "exposes the fade in seconds" do
+      expect(config.fade_s).to eq(0.01)
+    end
+
     it "defaults output to output.wav beside the first input" do
       expect(config.output).to eq(File.join(dir, "output.wav"))
     end
@@ -119,6 +127,24 @@ RSpec.describe CrosstalkCleaner::Config do
 
     it "honours BLOCK_BUFFER" do
       expect(build(env: { "BLOCK_BUFFER" => "250" }).block_buffer_ms).to eq(250)
+    end
+
+    it "honours FADE" do
+      expect(build(env: { "FADE" => "20" }).fade_ms).to eq(20)
+    end
+
+    it "accepts FADE=0 to disable the fade" do
+      expect(build(env: { "FADE" => "0" }).fade_ms).to eq(0)
+    end
+
+    it "rejects a negative FADE" do
+      expect { build(env: { "FADE" => "-5" }) }
+        .to raise_error(CrosstalkCleaner::ConfigurationError, /non-negative integer/)
+    end
+
+    it "rejects a non-numeric FADE" do
+      expect { build(env: { "FADE" => "fast" }) }
+        .to raise_error(CrosstalkCleaner::ConfigurationError, /non-negative integer/)
     end
 
     it "honours SILENCEDETECT_NOISE" do

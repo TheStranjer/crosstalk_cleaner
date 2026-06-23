@@ -40,6 +40,18 @@ module CrosstalkCleaner
       stderr
     end
 
+    # Measures EBU R128 loudness over only the audio selected by +select_expr+
+    # (an aselect expression covering a track's owned intervals) and returns
+    # ffmpeg's stderr text, which carries the integrated-loudness summary.
+    def ebur128(path, select_expr)
+      filter = "aselect='#{select_expr}',ebur128"
+      args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path, "-af", filter, "-f", "null", "-"]
+      _stdout, stderr, status = Open3.capture3(*args)
+      raise FfmpegError, "ebur128 failed for #{path}: #{stderr}" unless status.success?
+
+      stderr
+    end
+
     # Executes an ffmpeg argument vector (without the leading binary name).
     def run(args)
       full = [@ffmpeg_bin, "-hide_banner", "-y", *args]

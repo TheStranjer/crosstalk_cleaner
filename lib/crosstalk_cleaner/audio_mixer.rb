@@ -2,6 +2,8 @@
 
 require "tempfile"
 
+require_relative "interval_expression"
+
 module CrosstalkCleaner
   # Builds the ffmpeg invocation that collapses the multi-track recording into a
   # single crosstalk-free file. Each track is muted everywhere except the
@@ -28,13 +30,15 @@ module CrosstalkCleaner
     # @param inputs [Array<String>] input file paths, in priority order
     # @param ownership_by_track [Hash{Integer=>Array<Interval>}] owned intervals
     # @param output [String] intermediate output path
+    # @param gains [Hash{Integer=>Float}] per-track gain in dB to apply (from the
+    #   volume normalizer); tracks absent or zero are left at their original level.
     #
     # The filtergraph grows with the number of speech intervals and would overflow
     # the OS argv limit (Errno::E2BIG) if passed inline, so it is written to a
     # temp script file and handed to ffmpeg via -filter_complex_script.
-    def render(inputs, ownership_by_track, output)
+    def render(inputs, ownership_by_track, output, gains: {})
       Tempfile.create(["crosstalk_filter", ".txt"]) do |script|
-        script.write(filter_complex(inputs.size, ownership_by_track))
+        script.write(filter_complex(inputs.size, ownership_by_track, gains))
         script.flush
         @ffmpeg.run(build_args(inputs, script.path, output))
       end
@@ -51,11 +55,11 @@ module CrosstalkCleaner
     end
 
     # Builds the full -filter_complex string for the given number of tracks.
-    def filter_complex(track_count, ownership_by_track)
+    def filter_complex(track_count, ownership_by_track, gains = {})
       chains = (0...track_count).map do |index|
         intervals = ownership_by_track.fetch(index, [])
         "[#{index}:a]aresample=#{@resample_rate},aformat=channel_layouts=#{@channel_layout}," \
-          "volume=0:enable='#{mute_expression(intervals)}'[a#{index}]"
+          "volume=0:enable='#{mute_expression(intervals)}'#{gain_filter(gains[index])}[a#{index}]"
       end
       labels = (0...track_count).map { |index| "[a#{index}]" }.join
       chains.join(";") + ";#{labels}amix=inputs=#{track_count}:normalize=0[mix]"
@@ -66,12 +70,15 @@ module CrosstalkCleaner
     def mute_expression(intervals)
       return "1" if intervals.empty?
 
-      owned = intervals.map do |interval|
-        start_at = [interval.start_at - @buffer_s, 0.0].max
-        end_at = interval.end_at + @buffer_s
-        format("between(t,%<start>.3f,%<end>.3f)", start: start_at, end: end_at)
-      end.join("+")
-      "not(#{owned})"
+      "not(#{IntervalExpression.owned(intervals, @buffer_s)})"
+    end
+
+    # Trailing volume filter that applies a normalization gain, or "" when there
+    # is no (or a zero) gain so the chain is byte-identical to the un-normalized one.
+    def gain_filter(gain)
+      return "" if gain.nil? || gain.zero?
+
+      format(",volume=%<gain>.2fdB", gain: gain)
     end
   end
 end

@@ -6,7 +6,7 @@ module CrosstalkCleaner
   # Resolves runtime configuration from the command-line arguments and the
   # supported environment variables (OUTPUT, SILENCE_LIMIT, CROSSTALK_TOLERANCE,
   # BLOCK_BUFFER, SILENCEDETECT_NOISE, SILENCEDETECT_MIN_DURATION, NOISE_FLOOR,
-  # RESAMPLE_RATE, CHANNEL_LAYOUT).
+  # RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE, NORMALIZE_TARGET).
   class Config
     DEFAULT_SILENCE_LIMIT_MS = 750
     DEFAULT_CROSSTALK_TOLERANCE_MS = 300
@@ -18,10 +18,13 @@ module CrosstalkCleaner
     DEFAULT_CHANNEL_LAYOUT = "stereo"
     DEFAULT_FFMPEG_BIN = "ffmpeg"
     DEFAULT_FFPROBE_BIN = "ffprobe"
+    DEFAULT_VOLUME_NORMALIZE = true
+    DEFAULT_NORMALIZE_TARGET = :auto
+    FALSEY = %w[0 false no off].freeze
 
     attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms,
                 :silencedetect_noise, :silencedetect_min_duration, :noise_floor, :resample_rate,
-                :channel_layout, :ffmpeg_bin, :ffprobe_bin
+                :channel_layout, :ffmpeg_bin, :ffprobe_bin, :volume_normalize, :normalize_target
 
     # @param argv [Array<String>] input wav files in priority order (first = top)
     # @param env [Hash] environment variables (defaults to ENV)
@@ -62,6 +65,12 @@ module CrosstalkCleaner
       @channel_layout = string_value(env["CHANNEL_LAYOUT"], DEFAULT_CHANNEL_LAYOUT)
       @ffmpeg_bin = string_value(env["FFMPEG_BIN"], DEFAULT_FFMPEG_BIN)
       @ffprobe_bin = string_value(env["FFPROBE_BIN"], DEFAULT_FFPROBE_BIN)
+      resolve_normalization(env)
+    end
+
+    def resolve_normalization(env)
+      @volume_normalize = boolean_value(env["VOLUME_NORMALIZE"], DEFAULT_VOLUME_NORMALIZE)
+      @normalize_target = target_value(env["NORMALIZE_TARGET"], DEFAULT_NORMALIZE_TARGET, "NORMALIZE_TARGET")
     end
 
     def validate_inputs!
@@ -101,6 +110,25 @@ module CrosstalkCleaner
       return default if value.nil? || value.empty?
 
       value
+    end
+
+    # Loudness target: empty/missing or "auto" selects the data-driven median
+    # (:auto); otherwise any finite number is a fixed absolute LUFS target.
+    def target_value(value, default, name)
+      return default if value.nil? || value.empty? || value.strip.casecmp?("auto")
+
+      parsed = Float(value, exception: false)
+      return parsed if parsed&.finite?
+
+      raise ConfigurationError, "#{name} must be a number or 'auto' (got #{value.inspect})"
+    end
+
+    # Boolean setting: empty/missing uses the default, "0"/"false"/"no"/"off"
+    # (case-insensitive) disable it, anything else enables it.
+    def boolean_value(value, default)
+      return default if value.nil? || value.empty?
+
+      !FALSEY.include?(value.strip.downcase)
     end
   end
 end

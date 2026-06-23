@@ -12,10 +12,12 @@ module CrosstalkCleaner
 end
 
 require_relative "crosstalk_cleaner/interval"
+require_relative "crosstalk_cleaner/interval_expression"
 require_relative "crosstalk_cleaner/config"
 require_relative "crosstalk_cleaner/ffmpeg"
 require_relative "crosstalk_cleaner/silence_detector"
 require_relative "crosstalk_cleaner/overlap_resolver"
+require_relative "crosstalk_cleaner/volume_normalizer"
 require_relative "crosstalk_cleaner/audio_mixer"
 require_relative "crosstalk_cleaner/silence_remover"
 require_relative "crosstalk_cleaner/cleaner"

@@ -5,6 +5,7 @@ require "tmpdir"
 require_relative "ffmpeg"
 require_relative "silence_detector"
 require_relative "overlap_resolver"
+require_relative "volume_normalizer"
 require_relative "audio_mixer"
 require_relative "silence_remover"
 
@@ -18,6 +19,7 @@ module CrosstalkCleaner
       @logger = logger
       @detector = SilenceDetector.new(@ffmpeg)
       @resolver = OverlapResolver.new(tolerance_s: config.crosstalk_tolerance_s)
+      @normalizer = VolumeNormalizer.new(@ffmpeg, target: config.normalize_target, buffer_s: config.block_buffer_s)
       @mixer = AudioMixer.new(@ffmpeg, buffer_s: config.block_buffer_s,
                                        resample_rate: config.resample_rate, channel_layout: config.channel_layout)
       @remover = SilenceRemover.new(@ffmpeg, noise_floor: config.noise_floor)
@@ -26,10 +28,11 @@ module CrosstalkCleaner
     # Runs the pipeline and returns the path to the final output file.
     def run
       ownership = resolve_ownership
+      gains = compute_gains(ownership)
       Dir.mktmpdir("crosstalk_cleaner") do |dir|
         intermediate = File.join(dir, "crosstalk_cleaned.wav")
         log "Collapsing #{@config.inputs.size} tracks into a single crosstalk-free file"
-        @mixer.render(@config.inputs, ownership, intermediate)
+        @mixer.render(@config.inputs, ownership, intermediate, gains: gains)
         log "Removing dead silence (keeping at most #{@config.silence_limit_ms}ms)"
         @remover.render(intermediate, @config.output, @config.silence_limit_s)
       end
@@ -48,6 +51,17 @@ module CrosstalkCleaner
     end
 
     private
+
+    # Measures each track over its owned audio and returns per-track gains, unless
+    # normalization is switched off (then the mixer runs exactly as before).
+    def compute_gains(ownership)
+      return {} unless @config.volume_normalize
+
+      log "Normalizing track volumes"
+      gains = @normalizer.gains(@config.inputs, ownership)
+      gains.each { |index, gain| log format("  track %<idx>d gain %<gain>+.2f dB", idx: index, gain: gain) }
+      gains
+    end
 
     def build_ffmpeg(config)
       Ffmpeg.new(ffmpeg_bin: config.ffmpeg_bin, ffprobe_bin: config.ffprobe_bin,

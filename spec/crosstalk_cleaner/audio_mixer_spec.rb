@@ -51,6 +51,26 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
         "[a0]amix=inputs=1:normalize=0[mix]"
       )
     end
+
+    it "applies a per-track normalization gain after the mute filter" do
+      ownership = { 0 => [interval(0.0, 5.0, 0)], 1 => [interval(0.0, 5.0, 1)] }
+      expect(mixer.filter_complex(2, ownership, { 0 => 2.5, 1 => -4.0 })).to eq(
+        "[0:a]aresample=48000,aformat=channel_layouts=stereo," \
+        "volume=0:enable='not(between(t,0.000,5.000))',volume=2.50dB[a0];" \
+        "[1:a]aresample=48000,aformat=channel_layouts=stereo," \
+        "volume=0:enable='not(between(t,0.000,5.000))',volume=-4.00dB[a1];" \
+        "[a0][a1]amix=inputs=2:normalize=0[mix]"
+      )
+    end
+
+    it "omits the gain filter for tracks with no (or zero) gain" do
+      ownership = { 0 => [interval(0.0, 5.0, 0)] }
+      expect(mixer.filter_complex(1, ownership, { 0 => 0.0 })).to eq(
+        "[0:a]aresample=48000,aformat=channel_layouts=stereo," \
+        "volume=0:enable='not(between(t,0.000,5.000))'[a0];" \
+        "[a0]amix=inputs=1:normalize=0[mix]"
+      )
+    end
   end
 
   describe "#build_args" do

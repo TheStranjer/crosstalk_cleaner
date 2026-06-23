@@ -6,7 +6,10 @@ file. It does two things, in order:
 
 1. **Removes crosstalk** — when more than one speaker's microphone is active at
    the same time, only one speaker is kept; the bleed from the others is muted.
-2. **Removes dead silence** — any stretch of silence longer than a configurable
+2. **Normalizes volume** — each speaker is matched to a common, self-calibrated
+   loudness, measured only over the audio that is actually kept (so the long
+   silent stretches don't skew it), so no one speaker is much louder than another.
+3. **Removes dead silence** — any stretch of silence longer than a configurable
    limit is trimmed down to that limit.
 
 It shells out to [`ffmpeg`](https://ffmpeg.org/) / `ffprobe` for all audio work.
@@ -81,11 +84,18 @@ required.
 | `NOISE_FLOOR`                | `-30dB`                                    | Amplitude below which audio counts as silence when **trimming** dead silence from the final mix. Any `ffmpeg` volume expression. |
 | `RESAMPLE_RATE`              | `48000`                                    | Sample rate, in **Hz**, every track is resampled to before mixing. |
 | `CHANNEL_LAYOUT`             | `stereo`                                   | Channel layout every track is conformed to before mixing (e.g. `stereo`, `mono`). |
+| `VOLUME_NORMALIZE`           | `1` (on)                                   | Whether to level each speaker to a common loudness. Set to `0`/`false`/`no`/`off` to disable and leave levels untouched. |
+| `NORMALIZE_TARGET`           | `auto`                                     | Common loudness (EBU R128 **LUFS**) every track is matched to. `auto` uses the **median** of the speakers' own measured levels, so the target is drawn from the actual material and moves stay small. Give a number (e.g. `-16` for podcasts, `-23` for broadcast) to force a fixed absolute target. |
 | `FFMPEG_BIN`                 | `ffmpeg`                                   | Path to (or name of) the `ffmpeg` binary to invoke. |
 | `FFPROBE_BIN`                | `ffprobe`                                  | Path to (or name of) the `ffprobe` binary to invoke. |
 
 `SILENCE_LIMIT`, `CROSSTALK_TOLERANCE`, `BLOCK_BUFFER` and `RESAMPLE_RATE` must be positive integers;
-`SILENCEDETECT_MIN_DURATION` must be a positive number.
+`SILENCEDETECT_MIN_DURATION` must be a positive number; `NORMALIZE_TARGET` must be `auto` or a number
+(LUFS, normally negative).
+
+Normalization has built-in safeguards so it can never crush a speaker: a track is lifted by at most
+**+15 dB** and turned down by at most **−6 dB**, and any track that owns less than **3 s** of kept
+audio (too little to measure reliably) is left at its original level.
 
 ### Examples
 
@@ -99,6 +109,10 @@ SILENCE_LIMIT=1500 CROSSTALK_TOLERANCE=500 ruby ./crosstalk_cleaner.rb a.wav b.w
 # Treat quieter audio as silence and downmix to mono at 44.1kHz
 SILENCEDETECT_NOISE=-45dB NOISE_FLOOR=-45dB RESAMPLE_RATE=44100 CHANNEL_LAYOUT=mono \
   ruby ./crosstalk_cleaner.rb a.wav b.wav
+
+# Normalize every speaker to broadcast loudness, or turn leveling off entirely
+NORMALIZE_TARGET=-23 ruby ./crosstalk_cleaner.rb a.wav b.wav
+VOLUME_NORMALIZE=0   ruby ./crosstalk_cleaner.rb a.wav b.wav
 ```
 
 ## How it works internally
@@ -112,7 +126,8 @@ The pipeline is split into small, individually testable pieces under
 | `Ffmpeg`          | The only place that shells out to `ffmpeg`/`ffprobe`. |
 | `SilenceDetector` | Runs `silencedetect` and inverts it into speech `Interval`s. |
 | `OverlapResolver` | Applies the start-time + tolerance + priority rule to assign each instant an owner. |
-| `AudioMixer`      | Builds the `ffmpeg` filtergraph that mutes each track outside its owned intervals and sums them. |
+| `VolumeNormalizer`| Measures each track's loudness (EBU R128) over only its owned audio and computes the per-track gain to reach the common target (`NORMALIZE_TARGET`, or the median of the speakers when `auto`), within the boost/cut safeguards. |
+| `AudioMixer`      | Builds the `ffmpeg` filtergraph that mutes each track outside its owned intervals, applies the normalization gain, and sums them. |
 | `SilenceRemover`  | Builds the `ffmpeg` `silenceremove` invocation. |
 | `Cleaner`         | Orchestrates the whole pipeline. |
 | `CLI`             | Command-line front end and exit codes. |

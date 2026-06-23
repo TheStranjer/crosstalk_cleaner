@@ -90,6 +90,14 @@ RSpec.describe CrosstalkCleaner::Config do
     it "defaults the ffprobe binary to ffprobe" do
       expect(config.ffprobe_bin).to eq("ffprobe")
     end
+
+    it "defaults volume normalization to on" do
+      expect(config.volume_normalize).to be(true)
+    end
+
+    it "defaults the normalize target to auto (data-driven median)" do
+      expect(config.normalize_target).to eq(:auto)
+    end
   end
 
   describe "environment overrides" do
@@ -167,6 +175,31 @@ RSpec.describe CrosstalkCleaner::Config do
     it "rejects a zero or negative min duration" do
       expect { build(env: { "SILENCEDETECT_MIN_DURATION" => "0" }) }
         .to raise_error(CrosstalkCleaner::ConfigurationError, /positive number/)
+    end
+
+    it "disables normalization for VOLUME_NORMALIZE=0" do
+      expect(build(env: { "VOLUME_NORMALIZE" => "0" }).volume_normalize).to be(false)
+    end
+
+    it "disables normalization for VOLUME_NORMALIZE=false (any case)" do
+      expect(build(env: { "VOLUME_NORMALIZE" => "FALSE" }).volume_normalize).to be(false)
+    end
+
+    it "keeps normalization on for any other VOLUME_NORMALIZE value" do
+      expect(build(env: { "VOLUME_NORMALIZE" => "1" }).volume_normalize).to be(true)
+    end
+
+    it "honours a fixed negative NORMALIZE_TARGET" do
+      expect(build(env: { "NORMALIZE_TARGET" => "-23" }).normalize_target).to eq(-23.0)
+    end
+
+    it "treats NORMALIZE_TARGET=auto (any case) as the data-driven median" do
+      expect(build(env: { "NORMALIZE_TARGET" => "AUTO" }).normalize_target).to eq(:auto)
+    end
+
+    it "rejects a non-numeric, non-auto NORMALIZE_TARGET" do
+      expect { build(env: { "NORMALIZE_TARGET" => "loud" }) }
+        .to raise_error(CrosstalkCleaner::ConfigurationError, /must be a number/)
     end
   end
 end

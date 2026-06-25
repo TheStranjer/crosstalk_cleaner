@@ -10,7 +10,7 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       ownership = { 0 => [interval(1.0, 2.0, 0)], 1 => [] }
       expect(mixer.filter_complex(2, ownership)).to eq(
         "[0:a]aresample=48000,aformat=channel_layouts=stereo[trk0];" \
-        "[2:a]aresample=48000,aformat=channel_layouts=stereo[env0];" \
+        "[2:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env0];" \
         "[trk0][env0]amultiply[a0];" \
         "[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=0[a1];" \
         "[a0][a1]amix=inputs=2:normalize=0[mix]"
@@ -21,10 +21,10 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       ownership = { 0 => [interval(0.0, 5.0, 0)], 1 => [interval(0.0, 5.0, 1)] }
       expect(mixer.filter_complex(2, ownership)).to eq(
         "[0:a]aresample=48000,aformat=channel_layouts=stereo[trk0];" \
-        "[2:a]aresample=48000,aformat=channel_layouts=stereo[env0];" \
+        "[2:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env0];" \
         "[trk0][env0]amultiply[a0];" \
         "[1:a]aresample=48000,aformat=channel_layouts=stereo[trk1];" \
-        "[3:a]aresample=48000,aformat=channel_layouts=stereo[env1];" \
+        "[3:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env1];" \
         "[trk1][env1]amultiply[a1];" \
         "[a0][a1]amix=inputs=2:normalize=0[mix]"
       )
@@ -35,7 +35,7 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       ownership = { 0 => [interval(0.0, 5.0, 0)] }
       expect(mixer.filter_complex(1, ownership)).to eq(
         "[0:a]aresample=44100,aformat=channel_layouts=mono[trk0];" \
-        "[1:a]aresample=44100,aformat=channel_layouts=mono[env0];" \
+        "[1:a]aresample=44100,pan=mono|c0=c0[env0];" \
         "[trk0][env0]amultiply[a0];" \
         "[a0]amix=inputs=1:normalize=0[mix]"
       )
@@ -45,10 +45,10 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       ownership = { 0 => [interval(0.0, 5.0, 0)], 1 => [interval(0.0, 5.0, 1)] }
       expect(mixer.filter_complex(2, ownership, { 0 => 2.5, 1 => -4.0 })).to eq(
         "[0:a]aresample=48000,aformat=channel_layouts=stereo[trk0];" \
-        "[2:a]aresample=48000,aformat=channel_layouts=stereo[env0];" \
+        "[2:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env0];" \
         "[trk0][env0]amultiply,volume=2.50dB[a0];" \
         "[1:a]aresample=48000,aformat=channel_layouts=stereo[trk1];" \
-        "[3:a]aresample=48000,aformat=channel_layouts=stereo[env1];" \
+        "[3:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env1];" \
         "[trk1][env1]amultiply,volume=-4.00dB[a1];" \
         "[a0][a1]amix=inputs=2:normalize=0[mix]"
       )
@@ -58,7 +58,7 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       ownership = { 0 => [interval(0.0, 5.0, 0)] }
       expect(mixer.filter_complex(1, ownership, { 0 => 0.0 })).to eq(
         "[0:a]aresample=48000,aformat=channel_layouts=stereo[trk0];" \
-        "[1:a]aresample=48000,aformat=channel_layouts=stereo[env0];" \
+        "[1:a]aresample=48000,pan=stereo|c0=c0|c1=c0[env0];" \
         "[trk0][env0]amultiply[a0];" \
         "[a0]amix=inputs=1:normalize=0[mix]"
       )
@@ -103,6 +103,31 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
 
       expect(captured_args.count("-i")).to eq(3) # two tracks + one envelope (track 1 owns nothing)
       expect(captured_args).to include("f32le")
+    end
+
+    # Regression: the block buffer must never pad a track over a region another
+    # track owns -- doing so unmutes both tracks at the boundary and plays back the
+    # very bleed the crosstalk pass removed. Adjacent owners meet at the boundary;
+    # neither one's buffer crosses it.
+    it "never lets a track's buffer bleed into a region another track owns" do
+      mixer = described_class.new(ffmpeg, buffer_s: 0.1)
+      ownership = { 0 => [interval(0.0, 4.0, 0)], 1 => [interval(4.0, 8.0, 1)] }
+      allow(ffmpeg).to receive(:duration).and_return(8.0)
+      envelopes = nil
+      allow(ffmpeg).to receive(:run) do |args|
+        env_paths = args.grep(/\.f32\z/)
+        envelopes = env_paths.map { |path| File.binread(path).unpack("e*") }
+      end
+
+      mixer.render(["a.wav", "b.wav"], ownership, "out.wav")
+
+      env0, env1 = envelopes
+      # At the boundary (t = 4.0s, sample 4000 at the 1000 Hz envelope rate) only
+      # one track may be live; with the bug both were.
+      expect(env0[4000]).to eq(0.0) # track 0 stops at the boundary, not 0.1s past it
+      expect(env1[3999]).to eq(0.0) # track 1 starts at the boundary, not 0.1s before it
+      expect(env0[3999]).to be > 0.0
+      expect(env1[4000]).to be > 0.0
     end
 
     # Regression: the interval data now travels in the binary envelope, never the

@@ -3,6 +3,7 @@
 require "fileutils"
 require "tempfile"
 
+require_relative "interval"
 require_relative "gain_envelope"
 
 module CrosstalkCleaner
@@ -20,6 +21,10 @@ module CrosstalkCleaner
   class AudioMixer
     RESAMPLE_RATE = 48_000
     CHANNEL_LAYOUT = "stereo"
+
+    # Channel counts for the ffmpeg layout names that are not plain dotted numbers
+    # (those, like "5.1", are summed instead -- see #channel_count).
+    NAMED_LAYOUT_CHANNELS = { "mono" => 1, "stereo" => 2, "quad" => 4, "downmix" => 2 }.freeze
 
     # Sample rate the gain envelope is generated at, in Hz. The envelope is a
     # slow-moving gain signal (block edges to the millisecond, fades over ~10ms),
@@ -41,9 +46,13 @@ module CrosstalkCleaner
     #   before mixing (e.g. "stereo", "mono").
     def initialize(ffmpeg, buffer_s: 0.0, fade_s: 0.0, resample_rate: RESAMPLE_RATE, channel_layout: CHANNEL_LAYOUT)
       @ffmpeg = ffmpeg
+      @buffer_s = buffer_s
       @resample_rate = resample_rate
       @channel_layout = channel_layout
-      @envelope = GainEnvelope.new(resample_rate: ENVELOPE_RATE, buffer_s: buffer_s, fade_s: fade_s)
+      # The buffer is applied here (clamped against the other tracks; see
+      # #padded_intervals) rather than inside the envelope, so it can never grow a
+      # track over a region another track owns and re-introduce crosstalk.
+      @envelope = GainEnvelope.new(resample_rate: ENVELOPE_RATE, buffer_s: 0.0, fade_s: fade_s)
     end
 
     # @param inputs [Array<String>] input file paths, in priority order
@@ -95,18 +104,38 @@ module CrosstalkCleaner
     private
 
     # The filterchain(s) for one track: a muted chain when it owns nothing, or its
-    # resampled audio multiplied by its (stereo-conformed) envelope otherwise.
+    # resampled audio multiplied by its (channel-conformed) envelope otherwise.
     def track_chains(index, env_input, gain)
       return ["#{base_chain(index)},volume=0[a#{index}]"] if env_input.nil?
 
       ["#{base_chain(index)}[trk#{index}]",
-       "[#{env_input}:a]aresample=#{@resample_rate},aformat=channel_layouts=#{@channel_layout}[env#{index}]",
+       "[#{env_input}:a]aresample=#{@resample_rate},#{envelope_conform}[env#{index}]",
        "[trk#{index}][env#{index}]amultiply#{gain_filter(gain)}[a#{index}]"]
     end
 
     # Resample/conform the raw input; every track chain starts from this.
     def base_chain(index)
       "[#{index}:a]aresample=#{@resample_rate},aformat=channel_layouts=#{@channel_layout}"
+    end
+
+    # Conforms the mono gain envelope to the mix's channel layout for the multiply.
+    # The envelope is a control signal whose 1.0 must stay 1.0, so the mono channel
+    # is *replicated* to every output channel with pan at unity gain. (aformat would
+    # instead rematrix mono->stereo with the energy-preserving -3dB pan law, scaling
+    # the gate to 0.707 and quietly dropping every kept region by 3dB -- enough to
+    # push speech under the silence floor so the silence pass deletes it.)
+    def envelope_conform
+      coeffs = (0...channel_count(@channel_layout)).map { |ch| "c#{ch}=c0" }.join("|")
+      "pan=#{@channel_layout}|#{coeffs}"
+    end
+
+    # Number of channels in an ffmpeg channel-layout name. Dotted numeric layouts
+    # ("5.1", "7.1.2") sum their parts; the named layouts ffmpeg defines that are
+    # not simply dotted are mapped explicitly. Anything else falls back to stereo.
+    def channel_count(layout)
+      NAMED_LAYOUT_CHANNELS[layout] ||
+        (layout.split(".").sum { |part| Integer(part, exception: false) || 0 } if layout.match?(/\A\d+(\.\d+)*\z/)) ||
+        2
     end
 
     # Maps each owning track index to the ffmpeg input index of its envelope. The
@@ -127,11 +156,34 @@ module CrosstalkCleaner
       paths = owned.map do |index|
         file = Tempfile.create(["crosstalk_env_#{index}_", ".f32"])
         file.close
-        @envelope.write(file.path, ownership_by_track.fetch(index, []), @ffmpeg.duration(inputs[index]))
+        intervals = padded_intervals(index, ownership_by_track)
+        @envelope.write(file.path, intervals, @ffmpeg.duration(inputs[index]))
       end
       yield paths
     ensure
       paths&.each { |path| FileUtils.rm_f(path) }
+    end
+
+    # A track's owned intervals, each padded by the block buffer but never allowed
+    # to extend into time another track owns -- padding into a neighbouring owner
+    # is exactly what re-introduces crosstalk. The buffer still grows freely into
+    # the silence between speakers; against another track it stops at the boundary,
+    # so adjacent owners meet rather than overlap.
+    def padded_intervals(index, ownership_by_track)
+      foreign = ownership_by_track.reject { |other, _| other == index }.values.flatten
+      ownership_by_track.fetch(index, []).map { |interval| pad_clamped(interval, foreign) }
+    end
+
+    # Pads one interval by the buffer on each side, then pulls each edge back to the
+    # nearest foreign block so the padded interval can never overlap another track.
+    def pad_clamped(interval, foreign)
+      start_at = interval.start_at - @buffer_s
+      end_at = interval.end_at + @buffer_s
+      foreign.each do |other|
+        start_at = [start_at, other.end_at].max if other.end_at <= interval.start_at
+        end_at = [end_at, other.start_at].min if other.start_at >= interval.end_at
+      end
+      Interval.new(start_at: start_at, end_at: end_at, track_index: interval.track_index)
     end
 
     # Trailing volume filter that applies a normalization gain, or "" when there

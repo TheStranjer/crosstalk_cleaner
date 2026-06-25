@@ -125,6 +125,14 @@ RSpec.describe CrosstalkCleaner::Config do
       expect(build(env: { "SILENCE_LIMIT" => "1500" }).silence_limit_ms).to eq(1500)
     end
 
+    it "honours SILENCE_BUFFER" do
+      expect(build(env: { "SILENCE_BUFFER" => "1000" }).silence_buffer_ms).to eq(1000)
+    end
+
+    it "defaults SILENCE_BUFFER to SILENCE_LIMIT when unset" do
+      expect(build(env: { "SILENCE_LIMIT" => "1500" }).silence_buffer_ms).to eq(1500)
+    end
+
     it "honours CROSSTALK_TOLERANCE" do
       expect(build(env: { "CROSSTALK_TOLERANCE" => "500" }).crosstalk_tolerance_ms).to eq(500)
     end

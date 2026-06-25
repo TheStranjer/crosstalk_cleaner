@@ -4,7 +4,8 @@ require "pathname"
 
 module CrosstalkCleaner
   # Resolves runtime configuration from the command-line arguments and the
-  # supported environment variables (OUTPUT, SILENCE_LIMIT, CROSSTALK_TOLERANCE,
+  # supported environment variables (OUTPUT, SILENCE_LIMIT, SILENCE_BUFFER,
+  # CROSSTALK_TOLERANCE,
   # BLOCK_BUFFER, FADE, SILENCEDETECT_NOISE, SILENCEDETECT_MIN_DURATION,
   # NOISE_FLOOR, DECLICK, RESAMPLE_RATE, CHANNEL_LAYOUT, VOLUME_NORMALIZE,
   # NORMALIZE_TARGET).
@@ -25,7 +26,8 @@ module CrosstalkCleaner
     DEFAULT_NORMALIZE_TARGET = :auto
     FALSEY = %w[0 false no off].freeze
 
-    attr_reader :inputs, :output, :silence_limit_ms, :crosstalk_tolerance_ms, :block_buffer_ms, :fade_ms,
+    attr_reader :inputs, :output, :silence_limit_ms, :silence_buffer_ms, :crosstalk_tolerance_ms, :block_buffer_ms,
+                :fade_ms,
                 :silencedetect_noise, :silencedetect_min_duration, :noise_floor, :declick, :resample_rate,
                 :channel_layout, :ffmpeg_bin, :ffprobe_bin, :volume_normalize, :normalize_target
 
@@ -39,29 +41,26 @@ module CrosstalkCleaner
     end
 
     # Crosstalk tolerance expressed in seconds for ffmpeg/comparison use.
-    def crosstalk_tolerance_s
-      crosstalk_tolerance_ms / 1000.0
-    end
+    def crosstalk_tolerance_s = crosstalk_tolerance_ms / 1000.0
 
     # Silence limit expressed in seconds.
-    def silence_limit_s
-      silence_limit_ms / 1000.0
-    end
+    def silence_limit_s = silence_limit_ms / 1000.0
+
+    # Silence buffer (silence kept at the leading edge of each trimmed gap)
+    # expressed in seconds.
+    def silence_buffer_s = silence_buffer_ms / 1000.0
 
     # Block buffer (padding around each owned block) expressed in seconds.
-    def block_buffer_s
-      block_buffer_ms / 1000.0
-    end
+    def block_buffer_s = block_buffer_ms / 1000.0
 
     # Fade (gain ramp at each owned block edge) expressed in seconds.
-    def fade_s
-      fade_ms / 1000.0
-    end
+    def fade_s = fade_ms / 1000.0
 
     private
 
     def resolve_settings(env)
       @silence_limit_ms = positive_int(env["SILENCE_LIMIT"], DEFAULT_SILENCE_LIMIT_MS, "SILENCE_LIMIT")
+      @silence_buffer_ms = positive_int(env["SILENCE_BUFFER"], @silence_limit_ms, "SILENCE_BUFFER")
       @crosstalk_tolerance_ms = positive_int(env["CROSSTALK_TOLERANCE"], DEFAULT_CROSSTALK_TOLERANCE_MS,
                                              "CROSSTALK_TOLERANCE")
       @block_buffer_ms = positive_int(env["BLOCK_BUFFER"], DEFAULT_BLOCK_BUFFER_MS, "BLOCK_BUFFER")

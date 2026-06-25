@@ -63,9 +63,9 @@ module CrosstalkCleaner
     # output is shorter than the input, so the bar fills partway before #finish
     # snaps it to 100%.
     def remove_silence(intermediate)
-      label = "Removing dead silence (keeping at most #{@config.silence_limit_ms}ms)"
+      label = "Removing dead silence (keeping at most #{@config.silence_buffer_ms}ms)"
       with_bar(label, duration_ms(intermediate)) do |bar|
-        @remover.render(intermediate, @config.output, @config.silence_limit_s) do |seconds|
+        @remover.render(intermediate, @config.output, @config.silence_buffer_s) do |seconds|
           bar.update(ms(seconds))
         end
       end

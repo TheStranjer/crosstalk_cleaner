@@ -57,11 +57,16 @@ RSpec.describe CrosstalkCleaner::Ffmpeg do
 
   describe "#ebur128" do
     it "selects the given expression then measures, returning stderr" do
-      allow(Open3).to receive(:capture3).and_return(["", "I: -18.0 LUFS", ok])
+      written = nil
+      allow(Open3).to receive(:capture3) do |*args|
+        written = File.read(args[args.index("-filter_complex_script") + 1])
+        ["", "I: -18.0 LUFS", ok]
+      end
       expect(ffmpeg.ebur128("a.wav", "between(t,0.000,5.000)")).to eq("I: -18.0 LUFS")
+      expect(written).to eq("[0:a]aselect='between(t,0.000,5.000)',ebur128[out]")
       expect(Open3).to have_received(:capture3)
         .with("ffmpeg", "-hide_banner", "-nostats", "-i", "a.wav",
-              "-af", "aselect='between(t,0.000,5.000)',ebur128", "-f", "null", "-")
+              "-filter_complex_script", anything, "-map", "[out]", "-f", "null", "-")
     end
 
     it "raises when ffmpeg fails" do

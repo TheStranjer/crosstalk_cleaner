@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "tempfile"
 
 module CrosstalkCleaner
   # Thin wrapper around the ffmpeg / ffprobe binaries. Every shell-out lives here
@@ -44,10 +45,19 @@ module CrosstalkCleaner
     # ffmpeg's stderr text, which carries the integrated-loudness summary. With a
     # block the pass is streamed and the block is called with the measured time so
     # far, in seconds, each time ffmpeg reports progress.
+    #
+    # The filtergraph is handed over via -filter_complex_script rather than inline:
+    # a long recording's owned intervals expand to thousands of between() terms,
+    # which would overflow the OS argument-list limit (E2BIG) on the command line.
     def ebur128(path, select_expr, &)
-      filter = "aselect='#{select_expr}',ebur128"
-      args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path, "-af", filter, "-f", "null", "-"]
-      analyze(args, "ebur128 failed for #{path}", &)
+      filter = "[0:a]aselect='#{select_expr}',ebur128[out]"
+      Tempfile.create(["crosstalk_ebur128", ".txt"]) do |script|
+        script.write(filter)
+        script.flush
+        args = [@ffmpeg_bin, "-hide_banner", "-nostats", "-i", path,
+                "-filter_complex_script", script.path, "-map", "[out]", "-f", "null", "-"]
+        analyze(args, "ebur128 failed for #{path}", &)
+      end
     end
 
     # Executes an ffmpeg argument vector (without the leading binary name). When

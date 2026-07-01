@@ -43,6 +43,11 @@ module CrosstalkCleaner
     # Crosstalk tolerance expressed in seconds for ffmpeg/comparison use.
     def crosstalk_tolerance_s = crosstalk_tolerance_ms / 1000.0
 
+    # Whether the crosstalk removal step runs. A negative CROSSTALK_TOLERANCE
+    # (e.g. -1) disables it entirely, so every track keeps all of its own speech
+    # and overlapping speakers are left untouched.
+    def crosstalk_removal? = !crosstalk_tolerance_ms.negative?
+
     # Silence limit expressed in seconds.
     def silence_limit_s = silence_limit_ms / 1000.0
 
@@ -62,7 +67,7 @@ module CrosstalkCleaner
       @silence_limit_ms = positive_int(env["SILENCE_LIMIT"], DEFAULT_SILENCE_LIMIT_MS, "SILENCE_LIMIT")
       @silence_buffer_ms = positive_int(env["SILENCE_BUFFER"], @silence_limit_ms, "SILENCE_BUFFER")
       @crosstalk_tolerance_ms = positive_int(env["CROSSTALK_TOLERANCE"], DEFAULT_CROSSTALK_TOLERANCE_MS,
-                                             "CROSSTALK_TOLERANCE")
+                                             "CROSSTALK_TOLERANCE", allow_negative: true)
       @block_buffer_ms = positive_int(env["BLOCK_BUFFER"], DEFAULT_BLOCK_BUFFER_MS, "BLOCK_BUFFER")
       @fade_ms = positive_int(env["FADE"], DEFAULT_FADE_MS, "FADE", allow_zero: true)
       @resample_rate = positive_int(env["RESAMPLE_RATE"], DEFAULT_RESAMPLE_RATE, "RESAMPLE_RATE")
@@ -101,15 +106,23 @@ module CrosstalkCleaner
     end
 
     # Integer setting. With +allow_zero+ the value may be zero (for settings where
-    # 0 means "off"); otherwise it must be strictly positive.
-    def positive_int(value, default, name, allow_zero: false)
+    # 0 means "off"); otherwise it must be strictly positive. With +allow_negative+
+    # any negative value is also accepted (for settings where a negative acts as a
+    # disable sentinel, e.g. CROSSTALK_TOLERANCE).
+    def positive_int(value, default, name, allow_zero: false, allow_negative: false)
       return default if value.nil? || value.empty?
 
       parsed = Integer(value, exception: false)
-      return parsed if parsed && (allow_zero ? !parsed.negative? : parsed.positive?)
+      return parsed if parsed && int_in_range?(parsed, allow_zero, allow_negative)
 
       qualifier = allow_zero ? "non-negative" : "positive"
       raise ConfigurationError, "#{name} must be a #{qualifier} integer (got #{value.inspect})"
+    end
+
+    def int_in_range?(parsed, allow_zero, allow_negative)
+      return true if allow_negative && parsed.negative?
+
+      allow_zero ? !parsed.negative? : parsed.positive?
     end
 
     def positive_float(value, default, name)

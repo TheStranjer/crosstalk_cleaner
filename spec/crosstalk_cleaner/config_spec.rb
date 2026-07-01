@@ -67,6 +67,10 @@ RSpec.describe CrosstalkCleaner::Config do
       expect(config.crosstalk_tolerance_s).to eq(0.3)
     end
 
+    it "enables crosstalk removal by default" do
+      expect(config.crosstalk_removal?).to be(true)
+    end
+
     it "exposes the silence limit in seconds" do
       expect(config.silence_limit_s).to eq(0.75)
     end
@@ -135,6 +139,16 @@ RSpec.describe CrosstalkCleaner::Config do
 
     it "honours CROSSTALK_TOLERANCE" do
       expect(build(env: { "CROSSTALK_TOLERANCE" => "500" }).crosstalk_tolerance_ms).to eq(500)
+    end
+
+    it "accepts a negative CROSSTALK_TOLERANCE to disable crosstalk removal" do
+      config = build(env: { "CROSSTALK_TOLERANCE" => "-1" })
+      expect(config.crosstalk_tolerance_ms).to eq(-1)
+      expect(config.crosstalk_removal?).to be(false)
+    end
+
+    it "disables crosstalk removal for any negative CROSSTALK_TOLERANCE" do
+      expect(build(env: { "CROSSTALK_TOLERANCE" => "-250" }).crosstalk_removal?).to be(false)
     end
 
     it "honours BLOCK_BUFFER" do

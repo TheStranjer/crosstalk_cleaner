@@ -46,10 +46,20 @@ module CrosstalkCleaner
       track_intervals = @config.inputs.each_with_index.map do |path, index|
         detect_speech(path, index)
       end
-      @resolver.resolve(track_intervals).group_by(&:track_index)
+      own(track_intervals).group_by(&:track_index)
     end
 
     private
+
+    # Assigns owned intervals to tracks. With crosstalk removal enabled the
+    # resolver collapses overlaps to a single owner per instant; disabled (a
+    # negative CROSSTALK_TOLERANCE) every track simply keeps all of its own
+    # detected speech, overlaps and all.
+    def own(track_intervals)
+      return track_intervals.flatten unless @config.crosstalk_removal?
+
+      @resolver.resolve(track_intervals)
+    end
 
     # Detects speech on one track while a progress bar tracks how far through the
     # track ffmpeg's silence scan has read.
@@ -74,7 +84,8 @@ module CrosstalkCleaner
     # Renders the crosstalk-free mix while a progress bar tracks how many output
     # samples ffmpeg has produced against the total the mix will contain.
     def collapse(ownership, gains, intermediate)
-      label = "Collapsing #{@config.inputs.size} tracks into a single crosstalk-free file"
+      kind = @config.crosstalk_removal? ? "crosstalk-free" : "combined"
+      label = "Collapsing #{@config.inputs.size} tracks into a single #{kind} file"
       rate = @config.resample_rate
       with_bar(label, total_samples(rate), unit: "samples") do |bar|
         @mixer.render(@config.inputs, ownership, intermediate, gains: gains) do |seconds|

@@ -28,6 +28,17 @@ RSpec.describe CrosstalkCleaner::Cleaner do
     it "gives the whole timeline to the earlier speaker, grouped by track" do
       expect(cleaner.resolve_ownership).to eq(0 => [interval(0.0, 10.0, 0)])
     end
+
+    context "when crosstalk removal is disabled" do
+      let(:config) { CrosstalkCleaner::Config.new([input_a, input_b], env: { "CROSSTALK_TOLERANCE" => "-1" }) }
+
+      it "keeps every track's own speech instead of collapsing the overlap" do
+        expect(cleaner.resolve_ownership).to eq(
+          0 => [interval(0.0, 10.0, 0)],
+          1 => [interval(5.0, 10.0, 1)]
+        )
+      end
+    end
   end
 
   describe "#run" do

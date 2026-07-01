@@ -49,6 +49,14 @@ result:               AAAABBBBCCCC
 If A and B had instead started within 300 ms of each other, A (higher priority)
 would have won the overlapping region outright.
 
+### Turning crosstalk removal off
+
+Set `CROSSTALK_TOLERANCE` to **any negative number** (e.g. `-1`) to disable the
+crosstalk removal step entirely. No owner is chosen for overlapping speech;
+instead every track keeps **all** of its own detected speech and the tracks are
+summed as-is, so two people talking at once are both heard. The rest of the
+pipeline (silence trimming, volume leveling) runs unchanged.
+
 ## Requirements
 
 - Ruby >= 3.3
@@ -77,7 +85,7 @@ required.
 | ---------------------------- | ----------------------------------------- | ------- |
 | `OUTPUT`                     | `output.wav` in the first input's folder  | Path of the final WAV file. |
 | `SILENCE_LIMIT`              | `750`                                      | Maximum amount of silence to keep, in **milliseconds**. Longer silences are cut down to this. |
-| `CROSSTALK_TOLERANCE`        | `300`                                      | How close two speakers' start times (in **milliseconds**) must be to count as simultaneous, in which case priority breaks the tie. |
+| `CROSSTALK_TOLERANCE`        | `300`                                      | How close two speakers' start times (in **milliseconds**) must be to count as simultaneous, in which case priority breaks the tie. Set to **any negative number** (e.g. `-1`) to disable crosstalk removal entirely — every track keeps all of its own speech. |
 | `BLOCK_BUFFER`               | `100`                                      | Padding, in **milliseconds**, kept on each side of every owned block so a speaker fades in/out instead of cutting in abruptly. |
 | `SILENCEDETECT_NOISE`        | `-30dB`                                    | Amplitude below which audio counts as silence when **detecting** speech regions. Any `ffmpeg` volume expression (e.g. `-40dB`, `0.01`). |
 | `SILENCEDETECT_MIN_DURATION` | `0.1`                                      | Minimum length, in **seconds**, a quiet stretch must last to be treated as silence during detection. |
@@ -89,7 +97,8 @@ required.
 | `FFMPEG_BIN`                 | `ffmpeg`                                   | Path to (or name of) the `ffmpeg` binary to invoke. |
 | `FFPROBE_BIN`                | `ffprobe`                                  | Path to (or name of) the `ffprobe` binary to invoke. |
 
-`SILENCE_LIMIT`, `CROSSTALK_TOLERANCE`, `BLOCK_BUFFER` and `RESAMPLE_RATE` must be positive integers;
+`SILENCE_LIMIT`, `BLOCK_BUFFER` and `RESAMPLE_RATE` must be positive integers; `CROSSTALK_TOLERANCE`
+must be a positive integer or a negative number (which disables crosstalk removal);
 `SILENCEDETECT_MIN_DURATION` must be a positive number; `NORMALIZE_TARGET` must be `auto` or a number
 (LUFS, normally negative).
 
@@ -105,6 +114,9 @@ OUTPUT=~/episode42.wav ruby ./crosstalk_cleaner.rb host.wav guest.wav
 
 # Keep at most 1.5s of silence, widen the crosstalk tie window to 500ms
 SILENCE_LIMIT=1500 CROSSTALK_TOLERANCE=500 ruby ./crosstalk_cleaner.rb a.wav b.wav c.wav
+
+# Disable crosstalk removal entirely — keep every speaker's full audio
+CROSSTALK_TOLERANCE=-1 ruby ./crosstalk_cleaner.rb a.wav b.wav c.wav
 
 # Treat quieter audio as silence and downmix to mono at 44.1kHz
 SILENCEDETECT_NOISE=-45dB NOISE_FLOOR=-45dB RESAMPLE_RATE=44100 CHANNEL_LAYOUT=mono \

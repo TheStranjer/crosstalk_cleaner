@@ -175,13 +175,19 @@ module CrosstalkCleaner
     end
 
     # Pads one interval by the buffer on each side, then pulls each edge back to the
-    # nearest foreign block so the padded interval can never overlap another track.
+    # MIDPOINT of the silence gap to the nearest foreign block on that side -- never
+    # past it. Clamping to the foreign block's own edge (its far side of the gap) is
+    # not enough: the neighbour pads symmetrically toward the same gap, so both edges
+    # advance to each other's unpadded boundary and overlap by up to 2*buffer, which
+    # unmutes two speakers at once and replays the crosstalk the mix just removed.
+    # Meeting at the midpoint guarantees adjacent owners touch but never cross, no
+    # matter how large each one's buffer is.
     def pad_clamped(interval, foreign)
       start_at = interval.start_at - @buffer_s
       end_at = interval.end_at + @buffer_s
       foreign.each do |other|
-        start_at = [start_at, other.end_at].max if other.end_at <= interval.start_at
-        end_at = [end_at, other.start_at].min if other.start_at >= interval.end_at
+        start_at = [start_at, (other.end_at + interval.start_at) / 2.0].max if other.end_at <= interval.start_at
+        end_at = [end_at, (interval.end_at + other.start_at) / 2.0].min if other.start_at >= interval.end_at
       end
       Interval.new(start_at: start_at, end_at: end_at, track_index: interval.track_index)
     end

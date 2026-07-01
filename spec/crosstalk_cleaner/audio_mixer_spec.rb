@@ -5,6 +5,34 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
 
   let(:ffmpeg) { instance_double(CrosstalkCleaner::Ffmpeg) }
 
+  # --- helpers for the randomized cross-track overlap sweep (see the very bottom) ---
+
+  def random_track_intervals(rng, ntracks, duration)
+    Array.new(ntracks) do |ti|
+      Array.new(1 + rng.rand(8)) do
+        start = rng.rand * (duration - 1)
+        interval(start, [start + 0.2 + (rng.rand * 4.0), duration].min, ti)
+      end.sort_by(&:start_at)
+    end
+  end
+
+  # The ACTUAL gated sample-blocks each track contributes: resolve ownership, pad it
+  # (the step that had the bug), then turn it into the merged on-regions the envelope
+  # paints -- exactly what reaches the mix. [start_sample, end_sample) per track.
+  def gated_blocks_by_track(mixer, ownership, total)
+    env = CrosstalkCleaner::GainEnvelope.new(resample_rate: 1000, buffer_s: 0.0, fade_s: 0.0)
+    ownership.keys.to_h do |idx|
+      [idx, env.send(:sample_blocks, mixer.send(:padded_intervals, idx, ownership), total)]
+    end
+  end
+
+  # Any instant where two different tracks are both live -- the crosstalk-replay bug.
+  def cross_track_overlaps(blocks_by_track)
+    flat = blocks_by_track.flat_map { |idx, blocks| blocks.map { |s, e| [s, e, idx] } }
+    flat.sort_by! { |s, _e, _i| s }
+    flat.each_cons(2).select { |(_s1, e1, i1), (s2, _e2, i2)| i1 != i2 && s2 < e1 }
+  end
+
   describe "#filter_complex" do
     it "multiplies each track by its envelope input and sums them, muting empty tracks" do
       ownership = { 0 => [interval(1.0, 2.0, 0)], 1 => [] }
@@ -130,6 +158,30 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       expect(env1[4000]).to be > 0.0
     end
 
+    # Regression: when two owners are separated by a real silence gap, both buffers
+    # pad toward it. Clamping each only to the other's unpadded edge let both advance
+    # to the far side of the gap and overlap by up to 2*buffer -- two speakers live at
+    # once, replaying the crosstalk that was removed. They must split the gap and meet,
+    # never cross.
+    it "never overlaps two owners separated by a silence gap shorter than twice the buffer" do
+      mixer = described_class.new(ffmpeg, buffer_s: 0.2)
+      # 0.3s gap (< 2 * 0.2s buffer): both buffers want to cross into it.
+      ownership = { 0 => [interval(0.0, 4.0, 0)], 1 => [interval(4.3, 8.0, 1)] }
+      allow(ffmpeg).to receive(:duration).and_return(8.0)
+      envelopes = nil
+      allow(ffmpeg).to receive(:run) do |args|
+        env_paths = args.grep(/\.f32\z/)
+        envelopes = env_paths.map { |path| File.binread(path).unpack("e*") }
+      end
+
+      mixer.render(["a.wav", "b.wav"], ownership, "out.wav")
+
+      env0, env1 = envelopes
+      # No sample may have both tracks live at the same instant.
+      both_live = env0.each_index.count { |i| env0[i].positive? && (env1[i] || 0.0).positive? }
+      expect(both_live).to eq(0)
+    end
+
     # Regression: the interval data now travels in the binary envelope, never the
     # filtergraph, so a track owning thousands of blocks keeps both argv and the
     # filtergraph script tiny (it used to inline the whole graph and blow E2BIG).
@@ -151,6 +203,30 @@ RSpec.describe CrosstalkCleaner::AudioMixer do
       expect(script_contents).to include("amultiply")
       expect(script_contents).to include("amix=inputs=1:normalize=0[mix]")
       expect(script_contents).not_to include("between(")
+    end
+  end
+
+  # The two #render regressions above are single hand-picked layouts. The overlap bug
+  # only showed up for specific gap/buffer ratios, so cover the invariant broadly: a
+  # deterministic randomized sweep over 2-5 tracks, many interval layouts, and the
+  # full range of buffer and crosstalk-tolerance settings. No two tracks may ever be
+  # live at the same instant -- if they are, the mix sums two speakers and replays the
+  # crosstalk the pass removed.
+  describe "cross-track ownership invariant" do
+    it "never produces overlapping gated blocks across tracks over a randomized sweep" do
+      rng = Random.new(20_260_629)
+      duration = 120.0
+      total = (duration * 1000).round
+      buffers = [0.0, 0.05, 0.1, 0.3, 0.5, 1.0]
+      tolerances = [0.0, 0.1, 0.3, 0.5, 1.0]
+
+      2000.times do
+        resolver = CrosstalkCleaner::OverlapResolver.new(tolerance_s: tolerances.sample(random: rng))
+        tracks = random_track_intervals(rng, 2 + rng.rand(4), duration)
+        ownership = resolver.resolve(tracks).group_by(&:track_index)
+        mixer = described_class.new(ffmpeg, buffer_s: buffers.sample(random: rng))
+        expect(cross_track_overlaps(gated_blocks_by_track(mixer, ownership, total))).to be_empty
+      end
     end
   end
 end
